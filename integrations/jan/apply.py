@@ -161,6 +161,16 @@ def brand(keep_data_dir=False):
         data['identifier'] = 'dev.rulith.strixllama'
     conf.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
 
+    # build:tauri starts with `tauri icon`, which regenerates every size from icon.png by plain
+    # downscaling — including the 16 px one, where make_icons.py deliberately drops the ring and
+    # grows the eyes. We ship the whole set already, so drop that step and keep the hinted sizes.
+    pkg = JAN / 'package.json'
+    scripts = json.loads(pkg.read_text(encoding='utf-8'))
+    tauri = scripts['scripts'].get('build:tauri', '')
+    if 'build:icon &&' in tauri:
+        scripts['scripts']['build:tauri'] = tauri.replace('yarn build:icon && ', '', 1)
+        pkg.write_text(json.dumps(scripts, indent=2, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
+
     html = JAN / 'web-app/index.html'
     replace_once(html, '<title>Jan</title>', '<title>strixllama</title>')
     print('  brand: %d icons, productName=strixllama, identifier=%s' % (copied, data['identifier']))
