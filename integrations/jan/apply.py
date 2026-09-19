@@ -159,6 +159,26 @@ def brand(keep_data_dir=False):
     data['productName'] = 'strixllama'
     if not keep_data_dir:
         data['identifier'] = 'dev.rulith.strixllama'
+    # Disable the updater. It points at Jan's endpoints AND carries Jan's signing key, so an
+    # upstream release would validate and install — replacing this build with stock Jan, runtime
+    # and management pages gone. Jan's own release notes feed goes with it, for the same reason:
+    # it would advertise versions that have nothing to do with what is installed.
+    plugins = data.get('plugins') or {}
+    if 'updater' in plugins:
+        plugins.pop('updater')
+        data['plugins'] = plugins
+    bundle = data.get('bundle') or {}
+    if bundle.get('createUpdaterArtifacts'):
+        bundle['createUpdaterArtifacts'] = False
+        data['bundle'] = bundle
+    # ...and the plugin that reads it: the call is `?`-propagated inside setup(), so an updater
+    # with no configuration would stop the application from starting at all.
+    replace_once(JAN / 'src-tauri/src/lib.rs',
+                 """            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;""",
+                 """            // strixllama: no updater. It was configured with Jan's endpoints and Jan's signing
+            // key, so an upstream release would verify and install over this build.""")
     conf.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
 
     # The window title lives in the per-platform config, not in index.html and not in the main one -
