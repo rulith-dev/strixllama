@@ -275,6 +275,19 @@ def brand(keep_data_dir=False):
                  '<span className="ml-2 font-medium font-studio">strixllama</span>')
     replace_once(sidebar, '<span className="mr-2 font-medium font-studio">Jan</span>',
                  '<span className="mr-2 font-medium font-studio">strixllama</span>')
+    # The download tray beside it managed Hub models and engine backends, neither of which this
+    # build fetches; models come from the catalog on disk.
+    replace_once(sidebar, "              {isLeftPanelOpen && <DownloadManagement />}\n",
+                 "              {/* strixllama: no download tray - nothing here is downloaded */}\n")
+    text = sidebar.read_text(encoding='utf-8')
+    text = text.replace("import { DownloadManagement } from '@/containers/DownloadManegement'\n", "", 1)
+    if text.count('isLeftPanelOpen') == 1:   # only its declaration is left, and the app builds with noUnusedLocals
+        text = (text.replace("  const { open: isLeftPanelOpen } = useLeftPanel()\n", "", 1)
+                    .replace("import { useLeftPanel } from '@/hooks/useLeftPanel'\n", "", 1))
+    sidebar.write_text(text, encoding='utf-8', newline='\n')
+    # Jan capitalises a provider it has no title for; the name is a lowercase wordmark.
+    replace_once(JAN / 'web-app/src/lib/utils.ts', "    case 'llamacpp':\n      return 'Llama.cpp'\n",
+                 "    case 'strixllama':\n      return 'strixllama'\n    case 'llamacpp':\n      return 'Llama.cpp'\n")
     # Two cards Jan shows a fresh install: "download Jan V3.5 for your device" fetches a model for
     # Jan's engine, which this build never loads, and the analytics consent asks about telemetry
     # that is not configured (no PostHog key) and would go to Jan's project if it were.
@@ -485,6 +498,24 @@ def converge_settings():
             setLastUsedModel('llamacpp', firstModel.id)""",
                  """            selectModelProvider(llamacppProvider.provider, firstModel.id)
             setLastUsedModel(llamacppProvider.provider, firstModel.id)""")
+    # The gear beside the provider opens Jan's provider page: base URL, API keys, a Delete button
+    # that would take the only provider with it. For ours it opens the Configuration page instead.
+    replace_once(picker, """                            navigate({
+                              to: route.settings.providers,
+                              params: { providerName: providerInfo.provider },
+                            })""", """                            if (providerInfo.provider === 'strixllama') {
+                              navigate({ to: '/strixllama/configuration' as '/strixllama/models' })
+                            } else {
+                              navigate({
+                                to: route.settings.providers,
+                                params: { providerName: providerInfo.provider },
+                              })
+                            }""")
+
+    # The provider page is still reachable by URL: keep it from deleting the one provider.
+    replace_once(JAN / 'web-app/src/routes/settings/providers/$providerName.tsx',
+                 "                <DeleteProvider provider={provider} />\n",
+                 "                {provider?.provider !== 'strixllama' && <DeleteProvider provider={provider} />}\n")
 
     menu = JAN / 'web-app/src/containers/SettingsMenu.tsx'
     text = menu.read_text(encoding='utf-8')
