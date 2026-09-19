@@ -58,6 +58,23 @@ def main():
     replace_once(lib, 'pub mod core;', 'pub mod core;\nmod strixllama;')
     replace_once(lib, 'tauri::generate_handler![', 'tauri::generate_handler![\n            strixllama::strixllama_request,')
     replace_once(JAN / 'src-tauri/src/main.rs', '#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]', '#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]')
+    # The chat goes through the app's Rust HTTP client (reqwest), which picks up the Windows
+    # system proxy but not its "bypass for 127.*" list - so with Clash or similar on, every
+    # request to the local server was handed to the proxy, and when the proxy could not reach it
+    # the chat failed with "Bad Gateway" (seen in app.log: proxy(http://127.0.0.1:7897/) intercepts
+    # 'http://127.0.0.1:8080/'). reqwest does honour NO_PROXY, for the registry proxy as well.
+    replace_once(JAN / 'src-tauri/src/main.rs', "    app_lib::run();\n", """    // strixllama: the model server is on loopback and must never be routed through a proxy
+    let mut no_proxy = String::from("127.0.0.1,localhost,::1");
+    if let Ok(existing) = std::env::var("NO_PROXY") {
+        if !existing.is_empty() {
+            no_proxy.push(',');
+            no_proxy.push_str(&existing);
+        }
+    }
+    std::env::set_var("NO_PROXY", &no_proxy);
+
+    app_lib::run();
+""")
     nav = JAN / 'web-app/src/components/left-sidebar/NavMain.tsx'
     replace_once(nav, "import { LucideIcon } from 'lucide-react'", "import { LucideIcon, Database, SlidersHorizontal, Terminal } from 'lucide-react'")
     anchor = "  {\n    title: 'common:settings',"
