@@ -241,6 +241,26 @@ def converge_settings():
         general.write_text(general.read_text(encoding='utf-8').replace(decl, '', 1),
                            encoding='utf-8', newline='\n')
 
+    # The model picker in the chat header lists every active provider, so Jan's own llama.cpp
+    # engine and the remote APIs (Anthropic, Azure, Gemini, ...) show up there even after the
+    # settings section is gone. Filter at the source, so all five uses in that file follow.
+    # Exclusions rather than a name allow-list: a provider you configured yourself keeps working
+    # whatever you called it.
+    picker = JAN / 'web-app/src/containers/DropdownModelProvider.tsx'
+    replace_once(picker, """    providers,
+    getProviderByName,""", """    providers: allProviders,
+    getProviderByName,""")
+    replace_once(picker, """  const [displayModel, setDisplayModel] = useState<string>('')""",
+                 """  // strixllama: this build serves one local endpoint from tools/manager.py. Jan's bundled
+  // engines never load a model here, and the remote APIs are not what it is for.
+  const providers = allProviders.filter(
+    (p) =>
+      p.provider !== 'llamacpp' &&
+      p.provider !== 'mlx' &&
+      !predefinedProviders.some((e) => e.provider.includes(p.provider))
+  )
+  const [displayModel, setDisplayModel] = useState<string>('')""")
+
     menu = JAN / 'web-app/src/containers/SettingsMenu.tsx'
     text = menu.read_text(encoding='utf-8')
     for entry in ('local_api_server',   # we serve on 8080 from tools/manager.py, not from Jan
