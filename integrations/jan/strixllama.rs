@@ -22,7 +22,7 @@ pub async fn strixllama_request(request: Value) -> Result<Value, String> {
         if !helper.is_file() {
             return Err(format!("找不到 strixllama 管理器 {}，可用 STRIX_ROOT 指定仓库根目录", helper.display()));
         }
-        let mut command = Command::new(python);
+        let mut command = Command::new(&python);
         command.arg(helper).current_dir(root).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         #[cfg(windows)] {
             use std::os::windows::process::CommandExt;
