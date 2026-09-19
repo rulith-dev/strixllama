@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { invoke } from '@tauri-apps/api/core'
 import { Link } from '@tanstack/react-router'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useModelProvider } from '@/hooks/useModelProvider'
+import { request, useStrixLlamaStatus, type Profile } from './status'
 import { Database, SlidersHorizontal, Terminal, RefreshCw, Play, Square, Search, Copy, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,19 +16,20 @@ type Model = { id: string; path: string; name: string; filename: string; archite
 // The four levels this model's chat template actually has: it accepts low, medium and xhigh, folds
 // 'high' into xhigh, and injects nothing at all for medium. A fifth level would be a duplicate.
 const THINKING_LEVELS = ['off', 'low', 'medium', 'high']
-type Profile = { thinking: string; context: number; gpu_layers: number; threads: number; batch: number; ubatch: number; mtp: boolean; draft: string; draft_max: number; draft_min: number; ngram_spec: boolean; kv: string; flash_attention: string; qsa: boolean; shared_vram: boolean; trunk_decode_q6k: boolean; parallel: number; vision: boolean; mmproj: string }
-type Status = { status: string; endpoint: string; runtime: string; runtime_available?: boolean; runtime_env?: Record<string, string>; identity?: { pid: number }; model_path?: string; log?: string; command?: string; adopted?: boolean; profile?: Profile; served_models?: { id: string }[] }
 type Catalog = { models: Model[]; roots: string[]; scanned_at: string }
 type LogChunk = { text: string; offset: number; file: string; reset: boolean }
 type View = 'models' | 'configuration' | 'developer'
-const request = <T,>(op: string, data: object = {}) => invoke<T>('strixllama_request', { request: { op, data } })
 const gb = (n: number) => `${(n / 1e9).toFixed(1)} GB`
+// Shared GPU memory has no control and no readout here: the manager decides it per load (see
+// unified_memory() in tools/manager.py) and says so in a notice only when it had to fall back.
 
 export default function StrixLlamaPage({ view }: { view: View }) {
   const { t } = useTranslation()
   const tr = useCallback((key: string, vars?: Record<string, unknown>) => t(`strixllama:${key}`, vars), [t])
   const [catalog, setCatalog] = useState<Catalog>()
-  const [status, setStatus] = useState<Status>()
+  const status = useStrixLlamaStatus(s => s.status)
+  const pollError = useStrixLlamaStatus(s => s.error)
+  const refreshStatus = useStrixLlamaStatus(s => s.refresh)
   const [selected, setSelected] = useState('')
   const [profile, setProfile] = useState<Profile>()
   const [query, setQuery] = useState('')
@@ -63,8 +63,6 @@ export default function StrixLlamaPage({ view }: { view: View }) {
   const runningNgram = status?.profile ? !!status.profile.ngram_spec : undefined
   const runningNgramText = !status?.identity ? stateText('notLoaded') : runningNgram === undefined ? stateText('unknown') : runningNgram ? stateText('on') : stateText('off')
   const ngramPending = status?.model_path === model?.path && profile && runningNgram !== undefined && profile.ngram_spec !== runningNgram
-  const providers = useModelProvider(s => s.providers)
-  const refreshStatus = useCallback(async () => { const s = await request<Status>('status'); setStatus(s); return s }, [])
   const act = async (fn: () => Promise<void>) => {
     setBusy(true); setError(''); setNotice(''); setNoticeKey('')
     try { await fn() } catch (e) { setError(String(e)) } finally { setBusy(false) }
@@ -78,18 +76,17 @@ export default function StrixLlamaPage({ view }: { view: View }) {
     let disposed = false
     const init = async () => {
       try {
-        const c = await request<Catalog>('catalog'); const s = await request<Status>('status')
+        const c = await request<Catalog>('catalog'); const s = await refreshStatus()
         if (disposed) return
-        setCatalog(c); setRootsText(c.roots.join('\n')); setStatus(s)
+        setCatalog(c); setRootsText(c.roots.join('\n'))
         const remembered = sessionStorage.getItem('strixllama-selected')
-        setSelected(c.models.find(m => m.id === remembered && m.role === 'model')?.id || c.models.find(m => m.path === s.model_path)?.id || c.models.find(m => m.role === 'model')?.id || '')
+        setSelected(c.models.find(m => m.id === remembered && m.role === 'model')?.id || c.models.find(m => m.path === s?.model_path)?.id || c.models.find(m => m.role === 'model')?.id || '')
       } catch (e) { if (!disposed) setError(String(e)) }
     }
     void init()
-    let pending = false
-    const timer = setInterval(async () => { if (pending) return; pending = true; try { const s = await request<Status>('status'); if (!disposed) setStatus(s) } catch (e) { if (!disposed) setError(String(e)) } finally { pending = false } }, 2500)
-    return () => { disposed = true; clearInterval(timer) }
-  }, [])
+    // the status itself is polled once for the whole app, by StrixLlamaSync
+    return () => { disposed = true }
+  }, [refreshStatus])
   useEffect(() => {
     let disposed = false
     setProfile(undefined)
@@ -118,16 +115,12 @@ export default function StrixLlamaPage({ view }: { view: View }) {
   useEffect(() => {
     if (status?.status === 'ready' && noticeKey === 'loading') say('loaded')
   }, [status?.status, noticeKey])
-  // Reuse Jan's normal provider store and native registration subscription.
-  // Model ids come from the running API; GGUF paths are not assumed to be API ids.
+  // The provider Jan chats through is kept in step with the server by StrixLlamaSync, app-wide.
+  // Here: the one decision the manager takes on its own during a load, which this page must say.
   useEffect(() => {
-    if (status?.status !== 'ready' || !status.served_models?.length) return
-    const p = providers.find(p => p.base_url?.replace(/\/+$/, '') === status.endpoint)
-    if (!p) return
-    const models = status.served_models.map(m => ({ ...p.models.find(old => old.id === m.id), id: m.id,
-      displayName: catalog?.models.find(item => item.path === status.model_path)?.name || m.id }))
-    if (JSON.stringify(p.models) !== JSON.stringify(models)) useModelProvider.getState().updateProvider(p.provider, { models })
-  }, [status, catalog, providers])
+    if (status?.notice === 'shared_vram_fallback') say('sharedVramFallback')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status?.notice, status?.identity?.pid])
   const stop = () => act(async () => { await request('stop'); await refreshStatus(); say('unloaded') })
   const start = () => act(async () => { if (!profile) return; await request('start', { id: selected, profile }); await refreshStatus(); say('loading') })
   const save = () => act(async () => { await request('save', { id: selected, profile }); say('saved') })
@@ -142,7 +135,8 @@ export default function StrixLlamaPage({ view }: { view: View }) {
       <div className="flex items-center justify-between gap-4"><div><div className="flex items-center gap-3"><h1 className="text-xl font-semibold">{tr('title')}</h1><span className={`rounded-full px-3 py-1 text-xs ${status?.status === 'ready' ? 'bg-emerald-500/10 text-emerald-500' : status?.status === 'loading' ? 'bg-amber-500/10 text-amber-500' : 'bg-muted text-muted-foreground'}`}>{stateText(status?.status || 'stopped')}</span><span className="rounded-full border px-3 py-1 text-xs text-muted-foreground" title={tr('backendHint')}>HIP/ROCm</span></div><p className="mt-1 text-sm text-muted-foreground">{tr('subtitle')}</p></div><div className="flex items-center gap-2"><code className="text-xs text-muted-foreground">{status?.endpoint || 'http://127.0.0.1:8080/v1'}</code><Button size="sm" variant="outline" disabled={busy || !status?.identity} onClick={stop}><Square size={14} />{tr('unload')}</Button></div></div>
       <nav aria-label={tr('nav')} className="mt-5 flex gap-2">{tabs.map(tab => <Link key={tab.id} to={`/strixllama/${tab.id}` as '/strixllama/models'} className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm ${view === tab.id ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-muted'}`}><tab.icon size={16} />{tab.label}</Link>)}</nav>
     </div>
-    {error && <div role="alert" className="mx-6 mt-4 rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-500">{error}</div>}
+    {(error || pollError) && <div role="alert" className="mx-6 mt-4 rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-500">{error || pollError}</div>}
+    {status?.failure && !status.identity && <div role="alert" className="mx-6 mt-4 rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-500">{tr('failure', { reason: status.failure })}</div>}
     {notice && <div role="status" className="mx-6 mt-4 rounded-lg bg-emerald-500/10 p-3 text-sm text-emerald-600 dark:text-emerald-400">{notice}</div>}
     {view === 'models' && <div className="min-h-0 flex-1 overflow-auto p-6">
       <div className="mb-4 flex flex-wrap items-center gap-3"><div className="relative min-w-64 flex-1"><Search size={16} className="absolute left-3 top-2.5 text-muted-foreground" /><Input aria-label={tr('models.searchLabel')} className="pl-9" placeholder={tr('models.search')} value={query} onChange={e => setQuery(e.target.value)} /></div><select aria-label={tr('models.kindLabel')} className={selectClass} value={kind} onChange={e => setKind(e.target.value)}><option value="model">{tr('models.kindModel')}</option><option value="draft">{tr('models.kindDraft')}</option><option value="projection">{tr('models.kindProjection')}</option><option value="all">{tr('models.kindAll')}</option></select><Button variant="outline" onClick={() => setShowRoots(!showRoots)}>{tr('models.roots')}</Button><Button disabled={busy} variant="outline" onClick={() => act(async () => { await refreshCatalog(true) })}><RefreshCw size={15} />{tr('models.rescan')}</Button></div>
@@ -199,10 +193,6 @@ export default function StrixLlamaPage({ view }: { view: View }) {
             {numeric(tr('config.advanced.parallel'), 'parallel', tr('config.advanced.parallelHelp'), 1, 8)}
           </div>
           <div className="space-y-5">
-            <div>
-              <label className="flex items-center justify-between gap-4 text-sm"><span className="font-medium">{tr('config.advanced.sharedVram')}</span><Switch id="shared-vram" checked={!!profile.shared_vram} onCheckedChange={v => field('shared_vram', v)} /></label>
-              <p className="mt-2 text-xs text-muted-foreground">{tr('config.advanced.sharedVramHelp')}</p>
-            </div>
             <div>
               <label className="flex items-center justify-between gap-4 text-sm"><span className="font-medium">{tr('config.advanced.ngram')}</span><Switch id="ngram-spec" checked={!!profile.ngram_spec} onCheckedChange={v => field('ngram_spec', v)} /></label>
               <p className="mt-2 text-xs text-muted-foreground">{tr('config.advanced.ngramHelp')}</p>

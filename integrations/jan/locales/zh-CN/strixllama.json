@@ -4,6 +4,7 @@
   "unload": "卸载模型",
   "backendHint": "由 config/jan/backend.json 选择，重新加载模型后切换。",
   "nav": "strixllama 管理",
+  "failure": "上次加载失败：{{reason}}",
   "state": {
     "ready": "运行中",
     "loading": "加载中",
@@ -23,6 +24,7 @@
     "loading": "正在加载模型，进度见开发者日志。",
     "loaded": "模型已加载。",
     "unloaded": "模型已卸载，内存已释放。",
+    "sharedVramFallback": "专用显存不够，已自动改用共享显存重新加载。这会比全部驻留专用显存慢一些。",
     "saved": "配置已保存。当前运行实例保持原参数，下次加载时生效。"
   },
   "models": {
@@ -118,8 +120,6 @@
       "threadsHelp": "本机 16 合适",
       "parallel": "并发槽位",
       "parallelHelp": "同时服务的请求数。超过 1 会多占数 GB 计算缓冲，长上下文下可能导致加载失败。",
-      "sharedVram": "允许使用共享显存",
-      "sharedVramHelp": "允许分配溢出到共享显存。这样更慢，仅在模型加载失败时才打开。",
       "ngram": "n-gram 草稿预测",
       "ngramHelp": "匹配已有文本来草拟。MTP 关闭时有用；与 MTP 同开会争抢同一份验证预算，通常更慢。",
       "ngramRunning": "当前运行：n-gram 草稿预测{{state}}。",

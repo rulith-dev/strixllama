@@ -111,6 +111,9 @@ DEFAULTS = dict(context=32768, gpu_layers=999, threads=16, batch=2048, ubatch=51
                 # nothing at all, i.e. the model's own default behaviour. Four levels is what this
                 # model actually has; offering five would be two of them doing the same thing.
                 ngram_spec=False, kv='f16', flash_attention='off', thinking='off',
+                # shared_vram: force GGML_HIP_ENABLE_UNIFIED_MEMORY on. False means automatic, see
+                # unified_memory(): a load first tries the dedicated carve alone, which is faster
+                # and far steadier, and falls back to shared memory only when that runs out.
                 qsa=False, shared_vram=False,
                 # parallel: server slots. More than one costs ~12 GB of compute buffers on this model
                 # (measured 13.1 GB of shared GPU memory at 4 slots against 1.1 GB at one): the worst-case
@@ -289,7 +292,16 @@ def profile(model):
     default = dict(DEFAULTS)
     default['mtp'] = MODEL_FAMILY in Path(model['path']).name
     if model.get('context'): default['context'] = min(default['context'], int(model['context']))
-    return {**default, **settings()['profiles'].get(model['id'], {})}
+    saved = settings()['profiles'].get(model['id'], {})
+    # A profile written by an earlier version can carry fields this one no longer has. They are
+    # dropped here rather than echoed to the page, which would send them straight back and have
+    # validate_profile() refuse the whole profile as unknown.
+    cfg = {**default, **{k: v for k, v in saved.items() if k in DEFAULTS}}
+    # thinking was a switch before it was a level. Normalise here and not only in
+    # validate_profile(): this is what the configuration page displays, and a stored `true`
+    # reached it as a level called "true" whose help text does not exist.
+    if type(cfg['thinking']) is bool: cfg['thinking'] = 'high' if cfg['thinking'] else 'off'
+    return cfg
 
 
 def validate_profile(raw, model):
@@ -338,7 +350,83 @@ def managed_runtime(path):
     return bool(path) and Path(path).resolve() == RUNTIME.resolve()
 
 
-def runtime_environment(cfg):
+def dedicated_vram_bytes():
+    """The GPU's dedicated memory as the display driver registered it - on this machine, the BIOS
+    carve. Read from the registry rather than asked of HIP, so it costs nothing and needs no GPU
+    context. None when it cannot be read (not Windows, no adapter entry)."""
+    try:
+        import winreg
+    except ImportError:
+        return None
+    best = None
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}') as adapters:
+            for i in range(64):
+                try: name = winreg.EnumKey(adapters, i)
+                except OSError: break
+                try:
+                    with winreg.OpenKey(adapters, name) as adapter:
+                        size = winreg.QueryValueEx(adapter, 'HardwareInformation.qwMemorySize')[0]
+                except OSError: continue
+                if isinstance(size, int) and size > (best or 0): best = size
+    except OSError:
+        return None
+    return best
+
+
+def memory_fingerprint(cfg):
+    """The profile fields that decide how much device memory a load takes."""
+    return {k: cfg.get(k) for k in ('context', 'batch', 'ubatch', 'parallel', 'gpu_layers', 'mtp', 'draft', 'vision', 'mmproj', 'trunk_decode_q6k')}
+
+
+def unified_memory(model, cfg):
+    """Whether this load runs with GGML_HIP_ENABLE_UNIFIED_MEMORY.
+
+    Off keeps every allocation in the dedicated carve and is the first attempt whenever the profile
+    does not force it on: it is the faster setting, and the steadier one by a wider margin (see
+    runtime_environment). When a load has already died of out-of-memory with this model, at this
+    carve, with these memory-relevant settings, that is remembered (settings.json, shared_vram_auto)
+    and the next load starts in shared memory instead of failing the same way again. Change the
+    carve or any of those settings and it is tried afresh, so a bigger carve gets its speed back.
+    """
+    if cfg.get('shared_vram', False):
+        return True
+    remembered = settings().get('shared_vram_auto', {}).get(model['id'])
+    return bool(remembered) and remembered.get('dedicated') == dedicated_vram_bytes() \
+        and remembered.get('fingerprint') == memory_fingerprint(cfg)
+
+
+def remember_shared_vram(model, cfg):
+    all_cfg = settings()
+    all_cfg.setdefault('shared_vram_auto', {})[model['id']] = dict(
+        dedicated=dedicated_vram_bytes(), fingerprint=memory_fingerprint(cfg),
+        since=dt.datetime.now().astimezone().isoformat())
+    atomic_json(DATA / 'settings.json', all_cfg)
+
+
+# How the runtime says it ran out of device memory: ggml's allocator ("cudaMalloc failed: out of
+# memory"), the KV cache and graph reserves ("failed to allocate ... buffer"), and HIP's own name.
+OOM_SIGNS = ('out of memory', 'cudamalloc failed', 'hiperroroutofmemory', 'failed to allocate')
+
+
+def exit_reason(log):
+    """Why a load ended, from the tail of its log: ('oom', line) when it ran out of memory, ('error',
+    line) for the last line that looks like one, ('exited', '') when the log says nothing."""
+    try:
+        path = Path(log)
+        with path.open('rb') as f:
+            f.seek(max(0, path.stat().st_size - 65536))
+            tail = f.read().decode('utf-8', 'replace')
+    except OSError:
+        return 'exited', ''
+    lines = [l.strip() for l in reversed(tail.splitlines()) if l.strip()]
+    oom = next((l for l in lines if any(s in l.lower() for s in OOM_SIGNS)), None)
+    if oom: return 'oom', oom
+    err = next((l for l in lines if re.search(r'\berror\b|failed|abort|exception|\bE\b', l, re.I)), None)
+    return ('error', err) if err else ('exited', '')
+
+
+def runtime_environment(cfg, unified=False):
     # start from a clean slate: a stray LLAMA_*/GGML_*/STRIX_* from a shell would silently change
     # the graph, and an inherited value is never what the profile asked for
     env = {k: v for k, v in os.environ.copy().items()
@@ -349,8 +437,9 @@ def runtime_environment(cfg):
     env['LLAMA_QSA_QUERY_STRIP'] = '512' if on else '0'
     # Off keeps allocations in the dedicated carve. It does not eliminate shared-memory use
     # entirely - Task Manager still shows a few GB - but it stops the spill that costs prefill:
-    # pp16384 903.64 +/- 3.71 off against 867.12 +/- 24.11 on, three llama-bench reps.
-    env['GGML_HIP_ENABLE_UNIFIED_MEMORY'] = '1' if cfg.get('shared_vram', False) else '0'
+    # pp16384 903.64 +/- 3.71 off against 867.12 +/- 24.11 on, three llama-bench reps. Whether a
+    # load gets it is decided by unified_memory(), not read from the profile here.
+    env['GGML_HIP_ENABLE_UNIFIED_MEMORY'] = '1' if unified else '0'
     # Q6_K decode twins of the Q8_0 trunk (llama-model.cpp build_decode_twins): batches of <= 8 tokens
     # read 23% fewer trunk bytes; prefill keeps the Q8_0 originals. No UI control - measured
     # prefill-neutral and 4% on decode for 2.9 GB, and at ctx 262144 it can stop a long prompt loading.
@@ -429,6 +518,15 @@ def state():
     saved = read_json(DATA / 'process.json', {})
     ident = saved.get('identity')
     if ident and managed_runtime(ident.get('exe')) and process_identity(ident['pid']) == ident: return saved
+    if ident and saved.get('adopted') is False and saved.get('log'):
+        # A process this manager started is gone without a stop. Record why, once: status() acts
+        # on an out-of-memory (shared-memory fallback) and the page can say what happened instead
+        # of silently going back to "not loaded".
+        reason, line = exit_reason(saved['log'])
+        saved = {'last_log': saved['log'], 'exited': dict(reason=reason, line=line, model_id=saved.get('model_id'),
+                 profile=saved.get('profile'), unified=bool(saved.get('unified')), log=saved['log'])}
+        atomic_json(DATA / 'process.json', saved)
+        return saved
     # Adopt only the exact project binary with the configured local endpoint.
     for p in discover():
         cmd = p.get('CommandLine') or ''
@@ -441,7 +539,9 @@ def state():
                              log=next((v for v in log_match.groups() if v), '') if log_match else '', command=cmd, adopted=True)
                 atomic_json(DATA/'process.json',saved)
                 return saved
-    return {'last_log':saved.get('log', saved.get('last_log',''))}
+    result = {'last_log':saved.get('log', saved.get('last_log',''))}
+    if saved.get('exited'): result['exited'] = saved['exited']
+    return result
 
 
 def http_json(path):
@@ -450,11 +550,29 @@ def http_json(path):
 
 def status():
     s = state()
+    exited = s.get('exited')
+    if exited and exited.get('reason') == 'oom' and not exited.get('unified') and exited.get('model_id') and exited.get('profile') is not None:
+        # The load ran out of the dedicated carve. Remember that for this model, carve and profile,
+        # and load again in shared memory - once: the relaunch records unified=True, so if that
+        # dies too the failure is reported rather than retried.
+        try:
+            m = model_by_id(exited['model_id']); cfg = validate_profile(exited['profile'], m)
+            remember_shared_vram(m, cfg)
+            s = launch(m, cfg, unified=True, notice='shared_vram_fallback')
+        except Exception as exc:
+            s = {**s, 'exited': {**exited, 'reason': 'error', 'line': f'{exited.get("line", "")}；改用共享显存重新加载失败：{exc}'}}
+            atomic_json(DATA / 'process.json', s)
     result = {**s, 'status':'stopped', 'endpoint':f'http://127.0.0.1:{PORT}/v1',
               'runtime':s.get('identity', {}).get('exe', str(RUNTIME)),
-              'runtime_available': runtime_available()}
+              'runtime_available': runtime_available(), 'dedicated_vram': dedicated_vram_bytes()}
+    e = s.get('exited') or {}
+    if e.get('reason') in ('oom', 'error'):
+        # a plain exit with nothing in the log is not reported: the app closing takes the server
+        # with it, and "the last load failed" would be the wrong thing to say about that
+        result['failure'] = e.get('line') or {'oom': '显存不足', 'error': '模型进程报错退出'}[e['reason']]
     if s.get('identity'):
         result['status']='loading'
+        result['model_name'] = next((x.get('name') for x in catalog()['models'] if x.get('path') == s.get('model_path')), None) or Path(s.get('model_path', '')).stem
         try:
             if http_json('/health').get('status')=='ok':
                 result['status']='ready'
@@ -486,6 +604,45 @@ def logs(offset=0):
         return {'text':text,'offset':offset+len(b)-tail,'file':str(path),'reset':reset}
 
 
+def launch(m, cfg, unified, notice=None):
+    """Start the runtime for model m with the already validated profile cfg: check the port, write
+    the log banner, record the process identity. `unified` is the shared-memory decision."""
+    try: http_json('/health'); raise ValueError('8080 端口正被其他服务占用')
+    except (urllib.error.URLError,TimeoutError): pass
+    # Check port before allocating model memory; do not stop unrelated engines.
+    import socket
+    with socket.socket() as sock:
+        try: sock.bind(('127.0.0.1',PORT))
+        except OSError: raise ValueError('8080 端口正被其他服务占用')
+    runtime = selected_runtime(cfg)
+    if not runtime.is_file() or not (runtime.parent/'ggml-hip.dll').is_file():
+        raise ValueError(f'优化运行时不存在：{runtime.parent.name}')
+    log=ROOT/'logs'/('jan-managed-'+dt.datetime.now().strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex[:6]+'.log')
+    log.parent.mkdir(exist_ok=True)
+    command=argv(m,cfg)
+    env=runtime_environment(cfg, unified)
+    banner = (f'[strixllama] runtime={runtime.parent.name} (HIP/ROCm); LLAMA_MMB_HC16={env["LLAMA_MMB_HC16"]} '
+              f'(must stay 0 on Windows); gates={sum(1 for k in env if k.startswith("LLAMA_"))}; '
+              f'QSA={"on" if cfg["qsa"] else "off"} (this runtime has no context threshold); '
+              f'MTP={"on" if cfg["mtp"] else "off"}'
+              f'{f" (draft ubatch capped to {env['STRIX_SPEC_DRAFT_UBATCH']})" if cfg["mtp"] else ""}; '
+              f'n-gram draft={"on (match=24, min=4, max=8)" if cfg["ngram_spec"] else "off"}; '
+              f'vision={"on" if cfg["vision"] else "off"}; shared memory={"on" if unified else "off"}; '
+              f'PLE reader=on-direct; rocm={ROCM_BIN}\n')
+    with log.open('wb') as f:
+        f.write(banner.encode('utf-8'))
+        f.flush()
+        proc=subprocess.Popen(command,stdout=f,stderr=subprocess.STDOUT,stdin=subprocess.DEVNULL,env=env,creationflags=HIDDEN,cwd=ROOT)
+    ident=process_identity(proc.pid)
+    if not ident: raise RuntimeError('模型进程启动失败，请查看日志')
+    saved=dict(identity=ident,model_id=m['id'],model_path=m['path'],log=str(log),command=subprocess.list2cmdline(command),profile=cfg,
+               unified=unified,started_at=dt.datetime.now().astimezone().isoformat(),adopted=False,
+               runtime_env={k:v for k,v in env.items() if k.startswith(('LLAMA_','GGML_','STRIX_'))})
+    if notice: saved['notice']=notice
+    atomic_json(DATA/'process.json',saved)
+    return saved
+
+
 def handle(op, data):
     if op=='catalog': return catalog(bool(data.get('refresh')))
     if op=='status': return status()
@@ -512,39 +669,8 @@ def handle(op, data):
         m=model_by_id(data['id'])
         if m['role']!='model': raise ValueError('草稿和视觉投影不能单独作为聊天模型加载')
         cfg=validate_profile(data.get('profile',profile(m)),m)
-        s=state()
-        if s.get('identity'): raise ValueError('请先卸载当前模型，再加载所选模型')
-        try: http_json('/health'); raise ValueError('8080 端口正被其他服务占用')
-        except (urllib.error.URLError,TimeoutError): pass
-        # Check port before allocating model memory; do not stop unrelated engines.
-        import socket
-        with socket.socket() as sock:
-            try: sock.bind(('127.0.0.1',PORT))
-            except OSError: raise ValueError('8080 端口正被其他服务占用')
-        runtime = selected_runtime(cfg)
-        if not runtime.is_file() or not (runtime.parent/'ggml-hip.dll').is_file():
-            raise ValueError(f'优化运行时不存在：{runtime.parent.name}')
-        log=ROOT/'logs'/('jan-managed-'+dt.datetime.now().strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex[:6]+'.log')
-        log.parent.mkdir(exist_ok=True)
-        command=argv(m,cfg)
-        env=runtime_environment(cfg)
-        banner = (f'[strixllama] runtime={runtime.parent.name} (HIP/ROCm); LLAMA_MMB_HC16={env["LLAMA_MMB_HC16"]} '
-                  f'(must stay 0 on Windows); gates={sum(1 for k in env if k.startswith("LLAMA_"))}; '
-                  f'QSA={"on" if cfg["qsa"] else "off"} (this runtime has no context threshold); '
-                  f'MTP={"on" if cfg["mtp"] else "off"}'
-                  f'{f" (draft ubatch capped to {env['STRIX_SPEC_DRAFT_UBATCH']})" if cfg["mtp"] else ""}; '
-                  f'n-gram draft={"on (match=24, min=4, max=8)" if cfg["ngram_spec"] else "off"}; '
-                  f'vision={"on" if cfg["vision"] else "off"}; PLE reader=on-direct; rocm={ROCM_BIN}\n')
-        with log.open('wb') as f:
-            f.write(banner.encode('utf-8'))
-            f.flush()
-            proc=subprocess.Popen(command,stdout=f,stderr=subprocess.STDOUT,stdin=subprocess.DEVNULL,env=env,creationflags=HIDDEN,cwd=ROOT)
-        ident=process_identity(proc.pid)
-        if not ident: raise RuntimeError('模型进程启动失败，请查看日志')
-        saved=dict(identity=ident,model_path=m['path'],log=str(log),command=subprocess.list2cmdline(command),profile=cfg,started_at=dt.datetime.now().astimezone().isoformat(),adopted=False,
-                   runtime_env={k:v for k,v in env.items() if k.startswith(('LLAMA_','GGML_','STRIX_'))})
-        atomic_json(DATA/'process.json',saved)
-        return {**saved,'status':'loading'}
+        if state().get('identity'): raise ValueError('请先卸载当前模型，再加载所选模型')
+        return {**launch(m,cfg,unified_memory(m,cfg)),'status':'loading'}
     raise ValueError('不支持的管理操作')
 
 

@@ -4,6 +4,7 @@
   "unload": "Unload model",
   "backendHint": "Selected in config/jan/backend.json. Reload the model to switch.",
   "nav": "strixllama management",
+  "failure": "The last load failed: {{reason}}",
   "state": {
     "ready": "Running",
     "loading": "Loading",
@@ -23,6 +24,7 @@
     "loading": "Loading the model. Progress appears in the developer log.",
     "loaded": "Model loaded.",
     "unloaded": "Model unloaded, memory released.",
+    "sharedVramFallback": "The dedicated carve ran out, so the model was loaded again in shared memory. This is slower than fitting entirely in dedicated memory.",
     "saved": "Settings saved. The running instance keeps its parameters; they apply on the next load."
   },
   "models": {
@@ -118,8 +120,6 @@
       "threadsHelp": "16 suits this machine",
       "parallel": "Concurrent slots",
       "parallelHelp": "Requests served at once. More than one slot costs several GB of compute buffers and can prevent loading at long context.",
-      "sharedVram": "Allow shared GPU memory",
-      "sharedVramHelp": "Lets allocations spill out of the dedicated carve. This is slower; turn it on only when the model fails to load.",
       "ngram": "n-gram drafting",
       "ngramHelp": "Drafts by matching earlier text. Useful when MTP is off; alongside MTP it competes for the same verification budget and is usually slower.",
       "ngramRunning": "Running: n-gram drafting {{state}}.",

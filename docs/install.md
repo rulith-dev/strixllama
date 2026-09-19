@@ -149,6 +149,18 @@ python tools/manager.py <<< '{"op":"save","data":{"id":"<model-id>","profile":{
 Sparse attention has to stay on above ~64K: dense attention runs out of memory there, and it is
 slower below it.
 
+### Shared GPU memory is decided per load, not by a switch
+
+A load first runs with `GGML_HIP_ENABLE_UNIFIED_MEMORY=0`, everything in the dedicated carve: that
+is 4% faster at prefill and, more to the point, steady — 903.6 ± 3.7 t/s against 867.1 ± 24.1 with
+it on. If the load dies of out-of-memory there, the manager loads it again in shared memory and
+remembers that for this model, this carve and these memory-relevant settings (`shared_vram_auto` in
+`config/jan/settings.json`), so the next load goes straight to what works. Enlarge the carve or
+change the context, batch, slots or draft and it is tried in the carve again. A profile can still
+force shared memory with `"shared_vram": true`; the Configuration page has no control for it and
+only says something when a load had to fall back. The dedicated size is read from the display driver's registry
+entry, so it costs nothing and needs no GPU context.
+
 ### Thinking depth
 
 `thinking` takes `off`, `low`, `medium` or `high`, and the Configuration page offers the same four.

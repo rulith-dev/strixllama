@@ -29,8 +29,15 @@ def main():
     shutil.copyfile(HERE / 'strixllama.rs', JAN / 'src-tauri/src/strixllama.rs')
     ui = JAN / 'web-app/src/components/strixllama'
     ui.mkdir(parents=True, exist_ok=True)
-    for name in ('StrixLlamaPage.tsx', 'strixllama.css'):
+    for name in ('StrixLlamaPage.tsx', 'StrixLlamaSync.tsx', 'status.ts', 'strixllama.css'):
         shutil.copyfile(HERE / name, ui / name)
+    # StrixLlamaSync polls the manager for the whole app and registers the one provider Jan's chat
+    # needs, so a fresh install can chat without first naming an endpoint in a dialog.
+    root = JAN / 'web-app/src/routes/__root.tsx'
+    replace_once(root, "import { DataProvider } from '@/providers/DataProvider'\n",
+                 "import { DataProvider } from '@/providers/DataProvider'\n"
+                 "import { StrixLlamaSync } from '@/components/strixllama/StrixLlamaSync'\n")
+    replace_once(root, "            <DataProvider />\n", "            <DataProvider />\n            <StrixLlamaSync />\n")
     # Jan's i18n discovers namespaces with import.meta.glob over locales/**/*.json, so dropping the
     # files in is enough - no registration to patch. A language Jan has but we do not falls back to
     # its own fallbackLng, which is en.
@@ -65,6 +72,20 @@ def main():
     converge_settings()
     drop_integrations()
     brand(KEEP_DATA_DIR)
+    brand_text()
+    # Jan's own llama.cpp engine is not loaded at all. Left in, its extension downloads a Vulkan
+    # backend on first start (llamacpp-b9967-win-vulkan..., seen in the download tray), starts an
+    # embedding server, and registers the provider the picker then has to filter out. Everything
+    # that looks it up does so by name with a fallback, as on the platforms where it is absent.
+    replace_once(JAN / 'web-app/src/services/core/bundled-extensions.ts', """  {
+    load: () => import('@janhq/llamacpp-extension'),
+    name: '@janhq/llamacpp-extension',
+    productName: 'llama.cpp Inference Engine',
+    version: '1.0.1',
+    description: 'This extension enables llama.cpp chat completion API calls',
+  },
+""", """  // strixllama: no llama.cpp engine of Jan's - inference is the server tools/manager.py starts
+""")
     print('strixllama: native command, pages, sidebar, settings and branding applied to %s' % JAN)
 
 
@@ -130,12 +151,14 @@ def drop_declarations(path, names):
 
 
 def brand(keep_data_dir=False):
-    """Make the built app strixllama's rather than Jan's: name, window title, icon.
+    """Make the built app strixllama's rather than Jan's: name, window title, icon, data directory.
 
-    The identifier decides where Tauri keeps application data, so changing it gives this build its
-    own directory instead of sharing Jan's. That is what you want for a separate product - two apps
-    writing one settings directory is how you lose a conversation history - but it does mean an
-    existing Jan install's data is not carried over. --keep-data-dir leaves it alone.
+    Jan keeps its data in %APPDATA%/<Cargo package name>/data - the threads, the settings, the
+    providers - and names the binary after the package too, so the package is renamed along with
+    the identifier. That gives this build its own directory instead of sharing an installed Jan's,
+    which is what you want for a separate product: two apps writing one settings directory is how
+    you lose a conversation history. It does mean an existing Jan install's data is not carried
+    over. --keep-data-dir leaves both the package name and the identifier alone.
 
     This renames a *build* of Jan, which Apache-2.0 allows. NOTICE.md states what it is; do not
     imply that Jan endorses it.
@@ -159,6 +182,17 @@ def brand(keep_data_dir=False):
     data['productName'] = 'strixllama'
     if not keep_data_dir:
         data['identifier'] = 'dev.rulith.strixllama'
+        cargo = JAN / 'src-tauri/Cargo.toml'
+        replace_once(cargo, '[package]\nname = "Jan"\n', '[package]\nname = "strixllama"\n')
+        replace_once(cargo, 'default-run = "Jan"\n', 'default-run = "strixllama"\n')
+        # The bundle-identifier constant is only used to look for a legacy settings file to
+        # migrate, and the migration deletes the file it copies. Pointed at Jan's directory, a
+        # first run would carry off - and remove - an installed Jan's settings.
+        constants = JAN / 'src-tauri/src/core/app/constants.rs'
+        replace_once(constants, 'pub const TAURI_BUNDLE_IDENTIFIER: &str = "jan.ai.app";',
+                     'pub const TAURI_BUNDLE_IDENTIFIER: &str = "dev.rulith.strixllama";')
+        replace_once(constants, 'assert_eq!(TAURI_BUNDLE_IDENTIFIER, "jan.ai.app");',
+                     'assert_eq!(TAURI_BUNDLE_IDENTIFIER, "dev.rulith.strixllama");')
     # Disable the updater. It points at Jan's endpoints AND carries Jan's signing key, so an
     # upstream release would validate and install — replacing this build with stock Jan, runtime
     # and management pages gone. Jan's own release notes feed goes with it, for the same reason:
@@ -181,6 +215,15 @@ def brand(keep_data_dir=False):
             // key, so an upstream release would verify and install over this build.""")
     conf.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
 
+    # No `jan` command on the user's PATH. Jan copies its CLI into resources/bin at every launch
+    # and appends that directory to the Windows user PATH; the CLI serves Jan's engine, which this
+    # build never loads, and an application editing the user's environment on startup is not
+    # something to inherit. The settings card that offered it went in converge_settings().
+    replace_once(JAN / 'src-tauri/src/lib.rs',
+                 "            setup::setup_jan_cli(app.handle().clone(), stored_version != app_version);\n",
+                 "            // strixllama: no `jan` CLI install - it serves Jan's engine and edits the user's PATH\n"
+                 "            let _ = (&stored_version, &app_version);\n")
+
     # The window title lives in the per-platform config, not in index.html and not in the main one -
     # this is the name in the title bar, which is the first thing anyone sees.
     for name in ('tauri.windows.conf.json', 'tauri.macos.conf.json', 'tauri.linux.conf.json'):
@@ -189,11 +232,19 @@ def brand(keep_data_dir=False):
             continue
         pdata = json.loads(platform.read_text(encoding='utf-8'))
         windows = pdata.get('app', {}).get('windows') or []
-        if not any(w.get('title') == 'Jan' for w in windows):
-            continue
+        changed = False
         for w in windows:
             if w.get('title') == 'Jan':
                 w['title'] = 'strixllama'
+                changed = True
+        # One installer. Jan also builds an MSI, which needs the WiX toolset fetched from GitHub
+        # at bundle time and adds nothing the NSIS setup does not already do.
+        targets = pdata.get('bundle', {}).get('targets')
+        if isinstance(targets, list) and 'msi' in targets:
+            pdata['bundle']['targets'] = [t for t in targets if t != 'msi']
+            changed = True
+        if not changed:
+            continue
         platform.write_text(json.dumps(pdata, indent=2, ensure_ascii=False) + '\n',
                             encoding='utf-8', newline='\n')
 
@@ -209,7 +260,144 @@ def brand(keep_data_dir=False):
 
     html = JAN / 'web-app/index.html'
     replace_once(html, '<title>Jan</title>', '<title>strixllama</title>')
+    # The splash: index.html shows /images/jan-logo.png (the waving hand) until the app mounts,
+    # and two other places use the same file. One image replaces all three.
+    shutil.copyfile(icons / 'icon.png', JAN / 'web-app/public/images/jan-logo.png')
+    replace_once(html, '<img src="/images/jan-logo.png" alt="Jan Logo" data-tauri-drag-region />',
+                 '<img src="/images/jan-logo.png" alt="strixllama" data-tauri-drag-region />')
+    replace_once(html, 'Booting up Jan…', 'Starting strixllama…')
+    replace_once(html, '        animation: wave 2s ease-in-out 2.5s infinite;\n',
+                 '        animation: none;   /* strixllama: an owl does not wave */\n')
+    # The name at the top of the sidebar - the native title bar is hidden behind Jan's own window
+    # chrome, so this is the name people actually see.
+    sidebar = JAN / 'web-app/src/components/left-sidebar/index.tsx'
+    replace_once(sidebar, '<span className="ml-2 font-medium font-studio">Jan</span>',
+                 '<span className="ml-2 font-medium font-studio">strixllama</span>')
+    replace_once(sidebar, '<span className="mr-2 font-medium font-studio">Jan</span>',
+                 '<span className="mr-2 font-medium font-studio">strixllama</span>')
+    # Two cards Jan shows a fresh install: "download Jan V3.5 for your device" fetches a model for
+    # Jan's engine, which this build never loads, and the analytics consent asks about telemetry
+    # that is not configured (no PostHog key) and would go to Jan's project if it were.
+    root = JAN / 'web-app/src/routes/__root.tsx'
+    for line in ("import { useAnalytic } from '@/hooks/useAnalytic'\n",
+                 "import { PromptAnalytic } from '@/containers/analytics/PromptAnalytic'\n",
+                 "import { useJanModelPrompt } from '@/hooks/useJanModelPrompt'\n",
+                 "import { PromptJanModel } from '@/containers/PromptJanModel'\n",
+                 "  const { productAnalyticPrompt } = useAnalytic()\n",
+                 "  const { showJanModelPrompt } = useJanModelPrompt()\n",
+                 "        {productAnalyticPrompt && <PromptAnalytic />}\n",
+                 "        {showJanModelPrompt && <PromptJanModel />}\n"):
+        text = root.read_text(encoding='utf-8')
+        if line in text:
+            root.write_text(text.replace(line, '', 1), encoding='utf-8', newline='\n')
     print('  brand: %d icons, productName=strixllama, identifier=%s' % (copied, data['identifier']))
+
+
+import re
+
+# The product name wherever a locale string names the product. Not \b: Japanese and Chinese run
+# straight into the word, and \w counts their characters as word characters.
+PRODUCT_WORD = re.compile(r'(?<![A-Za-z])Jan(?![A-Za-z])')
+CREDITS = {
+    'en': ("strixllama is a build of Jan by Menlo Research (Apache-2.0), with its own inference "
+           "runtime and management pages in place of Jan's engines and providers.",
+           "It runs on a pwilkin branch of llama.cpp, TheRock ROCm and Tauri. NOTICE.md in the "
+           "repository lists every licence."),
+    'zh-CN': ("strixllama 基于 Menlo Research 的 Jan（Apache-2.0）构建，用自己的推理运行时和管理页面"
+              "取代了 Jan 的引擎与模型提供商。",
+              "底层依赖 llama.cpp 的 pwilkin 分支、TheRock ROCm 与 Tauri。完整许可见仓库中的 NOTICE.md。"),
+}
+
+
+def brand_text():
+    """The name where the app says it: the default assistant, the credits, every locale string.
+
+    Attribution is the one thing not renamed. The credits say what this is built on rather than
+    claiming Jan's sentence about its own team, and the other strings that describe Jan itself
+    (documentation, release notes, GitHub) belong to cards converge_settings() already removed.
+    """
+    # The default assistant: seeded by the assistant extension on first run, and the web app's
+    # own fallback when no extension answers. Both carry the name and a sentence about Jan.
+    sentence = re.compile(r"Jan is a helpful desktop assistant that can reason through complex tasks "
+                          r"and use tools to complete them on the user.s behalf\.")
+    # a curly apostrophe survives both the single- and the double-quoted string it lands in
+    description = ("A local assistant that reasons through complex tasks and uses tools to "
+                   "complete them on the user’s behalf.")
+    for path in (JAN / 'extensions/assistant-extension/src/index.ts',
+                 JAN / 'web-app/src/hooks/useAssistant.ts'):
+        text = path.read_text(encoding='utf-8')
+        new = sentence.sub(description, text.replace("name: 'Jan',", "name: 'strixllama',", 1)
+                           .replace("avatar: '👋',", "avatar: '🦉',", 1))
+        if new != text:
+            path.write_text(new, encoding='utf-8', newline='\n')
+    # ...and an assistant.json a Jan build wrote before the rename still says Jan: rename it as
+    # it is read, in the store, so an existing data directory shows the same name as a new one.
+    store = JAN / 'web-app/src/hooks/useAssistant.ts'
+    replace_once(store, """  setAssistants: (assistants) => {
+    if (assistants) {
+      assistants.forEach((a) => (a.id = a.id?.toString())) // new String("id") !== "id"
+""", """  setAssistants: (assistants) => {
+    if (assistants) {
+      assistants.forEach((a) => (a.id = a.id?.toString())) // new String("id") !== "id"
+      // strixllama: an assistant written by a Jan build keeps Jan's name on disk
+      assistants.forEach((a) => {
+        if (a.id === 'jan' && a.name === 'Jan') {
+          a.name = 'strixllama'
+          a.description = '""" + description + """'
+        }
+      })
+""")
+
+    general = JAN / 'web-app/src/routes/settings/general.tsx'
+    # No updater in this build (see brand()), so no "check for updates" either.
+    replace_once(general, "              {!AUTO_UPDATER_DISABLED && (",
+                 "              {/* strixllama: no updater in this build, see brand() in apply.py */}\n"
+                 "              {false && (")
+    # Telemetry: there is no key, so nothing is collected, and the consent card would be asking
+    # on Jan's behalf. Gated on a constant rather than cut, for the same reason as SHOW_PROVIDERS.
+    privacy = JAN / 'web-app/src/routes/settings/privacy.tsx'
+    replace_once(privacy, "  return (\n", "  const SHOW_ANALYTICS = false   // strixllama: no telemetry is configured\n  return (\n")
+    card = """            <Card
+              header={
+                <div className="flex items-center justify-between mb-4">
+                  <h1 className="font-medium text-foreground text-base">
+                    {t('settings:privacy.analytics')}"""
+    text = privacy.read_text(encoding='utf-8')
+    if 'SHOW_ANALYTICS && (' not in text:
+        if text.count(card) != 1:
+            raise RuntimeError(f'Upstream source changed: {privacy}')
+        start = text.index(card)
+        end = text.index('            </Card>\n', start) + len('            </Card>\n')
+        text = text[:start] + '            {SHOW_ANALYTICS && (\n' + text[start:end] + '            )}\n' + text[end:]
+        privacy.write_text(text, encoding='utf-8', newline='\n')
+
+    # Every locale: the product's name in strings, the credits replaced (English and Chinese
+    # written here; the others drop the keys and fall back to English, which is Jan's own
+    # fallback rule) rather than reworded into a claim about who built Jan.
+    def walk(node, locale):
+        if isinstance(node, dict):
+            for key in list(node):
+                if key in ('creditsDesc1', 'creditsDesc2'):
+                    if locale in CREDITS:
+                        node[key] = CREDITS[locale][int(key[-1]) - 1]
+                    else:
+                        del node[key]
+                else:
+                    node[key] = walk(node[key], locale)
+            return node
+        if isinstance(node, list):
+            return [walk(x, locale) for x in node]
+        if isinstance(node, str):
+            return PRODUCT_WORD.sub('strixllama', node)
+        return node
+    for path in sorted((JAN / 'web-app/src/locales').glob('*/*.json')):
+        if path.name == 'strixllama.json':
+            continue
+        original = path.read_text(encoding='utf-8')
+        data = walk(json.loads(original), path.parent.name)
+        text = json.dumps(data, ensure_ascii=False, indent=2) + '\n'
+        if json.loads(text) != json.loads(original):
+            path.write_text(text, encoding='utf-8', newline='\n')
 
 
 def converge_settings():
@@ -250,8 +438,7 @@ def converge_settings():
     replace_once(picker, """    providers,
     getProviderByName,""", """    providers: allProviders,
     getProviderByName,""")
-    replace_once(picker, """  const [displayModel, setDisplayModel] = useState<string>('')""",
-                 """  // strixllama: this build serves one local endpoint from tools/manager.py. Jan's bundled
+    unmemoized = """  // strixllama: this build serves one local endpoint from tools/manager.py. Jan's bundled
   // engines never load a model here, and the remote APIs are not what it is for.
   const providers = allProviders.filter(
     (p) =>
@@ -259,7 +446,45 @@ def converge_settings():
       p.provider !== 'mlx' &&
       !predefinedProviders.some((e) => e.provider.includes(p.provider))
   )
-  const [displayModel, setDisplayModel] = useState<string>('')""")
+"""
+    # Memoised, and it matters: the list is a dependency of the effect that selects a thread's
+    # model. A fresh array every render re-ran that effect, which set state, which rendered again -
+    # React error #185 the moment any existing thread was opened.
+    memoized = """  // strixllama: this build serves one local endpoint from tools/manager.py. Jan's bundled
+  // engines never load a model here, and the remote APIs are not what it is for. Memoised because
+  // the list feeds the effect that selects a thread's model; a new array per render loops it.
+  const providers = useMemo(
+    () =>
+      allProviders.filter(
+        (p) =>
+          p.provider !== 'llamacpp' &&
+          p.provider !== 'mlx' &&
+          !predefinedProviders.some((e) => e.provider.includes(p.provider))
+      ),
+    [allProviders]
+  )
+"""
+    text = picker.read_text(encoding='utf-8')
+    if memoized not in text:
+        if unmemoized in text:             # a tree an earlier apply.py left with the looping array
+            text = text.replace(unmemoized, memoized, 1)
+        else:
+            anchor = "  const [displayModel, setDisplayModel] = useState<string>('')"
+            if text.count(anchor) != 1:
+                raise RuntimeError(f'Upstream source changed: {picker}')
+            text = text.replace(anchor, memoized + anchor, 1)
+        picker.write_text(text, encoding='utf-8', newline='\n')
+    # With Jan's engine filtered out, its "first llamacpp model" fallback for a new chat never
+    # fires and the picker opens on "select a model". Fall back to the first provider that has any.
+    replace_once(picker, """          const llamacppProvider = providers.find(
+            (p) => p.provider === 'llamacpp' && p.active && p.models.length > 0
+          )""", """          const llamacppProvider = providers.find(
+            (p) => p.active && p.models.length > 0 // strixllama: the local provider, not Jan's engine
+          )""")
+    replace_once(picker, """            selectModelProvider('llamacpp', firstModel.id)
+            setLastUsedModel('llamacpp', firstModel.id)""",
+                 """            selectModelProvider(llamacppProvider.provider, firstModel.id)
+            setLastUsedModel(llamacppProvider.provider, firstModel.id)""")
 
     menu = JAN / 'web-app/src/containers/SettingsMenu.tsx'
     text = menu.read_text(encoding='utf-8')
