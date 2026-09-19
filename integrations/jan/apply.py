@@ -161,6 +161,22 @@ def brand(keep_data_dir=False):
         data['identifier'] = 'dev.rulith.strixllama'
     conf.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
 
+    # The window title lives in the per-platform config, not in index.html and not in the main one -
+    # this is the name in the title bar, which is the first thing anyone sees.
+    for name in ('tauri.windows.conf.json', 'tauri.macos.conf.json', 'tauri.linux.conf.json'):
+        platform = JAN / 'src-tauri' / name
+        if not platform.is_file():
+            continue
+        pdata = json.loads(platform.read_text(encoding='utf-8'))
+        windows = pdata.get('app', {}).get('windows') or []
+        if not any(w.get('title') == 'Jan' for w in windows):
+            continue
+        for w in windows:
+            if w.get('title') == 'Jan':
+                w['title'] = 'strixllama'
+        platform.write_text(json.dumps(pdata, indent=2, ensure_ascii=False) + '\n',
+                            encoding='utf-8', newline='\n')
+
     # build:tauri starts with `tauri icon`, which regenerates every size from icon.png by plain
     # downscaling — including the 16 px one, where make_icons.py deliberately drops the ring and
     # grows the eyes. We ship the whole set already, so drop that step and keep the hinted sizes.
