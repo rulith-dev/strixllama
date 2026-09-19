@@ -1,0 +1,151 @@
+{
+  "title": "strixllama",
+  "subtitle": "本地模型管理",
+  "unload": "卸载模型",
+  "backendHint": "由 config/jan/backend.json 选择，重新加载模型后切换。",
+  "nav": "strixllama 管理",
+  "state": {
+    "ready": "运行中",
+    "loading": "加载中",
+    "stopped": "未加载",
+    "on": "开启",
+    "off": "关闭",
+    "unknown": "未记录",
+    "notLoaded": "未加载",
+    "notStarted": "未启动"
+  },
+  "tabs": {
+    "models": "模型列表",
+    "configuration": "模型配置",
+    "developer": "开发者日志"
+  },
+  "notice": {
+    "loading": "正在加载模型，进度见开发者日志。",
+    "loaded": "模型已加载。",
+    "unloaded": "模型已卸载，内存已释放。",
+    "saved": "配置已保存。当前运行实例保持原参数，下次加载时生效。"
+  },
+  "models": {
+    "search": "搜索模型、架构或量化类型…",
+    "searchLabel": "搜索模型",
+    "kindLabel": "文件类型",
+    "kindModel": "语言模型",
+    "kindDraft": "MTP 草稿",
+    "kindProjection": "视觉投影",
+    "kindAll": "全部文件",
+    "roots": "模型目录",
+    "rootsHelp": "每行一个本地模型目录",
+    "rootsSave": "保存并扫描",
+    "rescan": "重新扫描",
+    "colModel": "模型",
+    "colArchitecture": "架构",
+    "colQuant": "量化",
+    "colSize": "大小",
+    "colState": "状态",
+    "colActions": "操作",
+    "shards": "{{count}} 分片",
+    "incomplete": "文件不完整",
+    "available": "可用",
+    "configure": "配置",
+    "empty": "没有匹配的模型，可调整目录或搜索条件。",
+    "loadingCatalog": "正在读取本地模型…",
+    "summary": "{{count}} 个条目 · 分片合并显示 · {{size}}",
+    "readOnly": "模型文件保持只读"
+  },
+  "config": {
+    "targetLabel": "配置目标模型",
+    "save": "保存",
+    "load": "加载模型",
+    "declaredContext": "模型声明上下文 {{context}}",
+    "contextUnknown": "未知",
+    "runtime": {
+      "flashAttention": "Flash Attention",
+      "qsa": "稀疏注意力 QSA",
+      "kv": "KV 缓存 f16",
+      "weights": "原始权重",
+      "note": "该架构下稀疏注意力与 Flash Attention 始终开启，关闭任一项都会在 64K 以上上下文耗尽显存。权重按文件中的量化直接使用。"
+    },
+    "generation": {
+      "title": "生成",
+      "thinking": "思考深度",
+      "thinkingNote": "本模型的模板只接受 low、medium、xhigh 三档，并把 “high” 折叠为 xhigh——所以没有第五档可给。单次请求可用 chat_template_kwargs 覆盖。",
+      "thinkingLevel": {
+        "off": "关闭",
+        "low": "低",
+        "medium": "中",
+        "high": "高"
+      },
+      "thinkingHelp": {
+        "off": "模型直接回答，不做推理。",
+        "low": "简短聚焦的推理，直奔结论。",
+        "medium": "模型自身的默认行为：会思考，但不额外指示思考多少。",
+        "high": "仔细推演，检验假设并权衡其它可能。最慢。"
+      }
+    },
+    "context": {
+      "title": "上下文",
+      "length": "上下文长度",
+      "lengthHelp": "加载时预留的 token 容量",
+      "gpuLayers": "GPU 卸载层数",
+      "gpuLayersHelp": "999 表示尽可能多地卸载"
+    },
+    "speculative": {
+      "title": "推测解码",
+      "mtp": "MTP 草稿验证",
+      "mtpUnsupported": "仅 qwen4exp 架构可用",
+      "draftModel": "草稿模型",
+      "draftMax": "草稿长度",
+      "draftMaxHelp": "本机 3 最快；更长的草稿付出的代价超过收益",
+      "draftMin": "停止草拟阈值",
+      "draftMinHelp": "置信度低于此值即停止草拟。接受规则不变。"
+    },
+    "vision": {
+      "title": "图像输入",
+      "toggle": "接受图片",
+      "help": "加载视觉投影模型，聊天即可发送图片。关闭时带图片的请求会被拒绝。",
+      "cost": "约占 904 MB 显存。解码速度、提示缓存与 MTP 草稿均不受影响。",
+      "projector": "视觉投影模型",
+      "projectorAuto": "自动（随主模型）"
+    },
+    "advanced": {
+      "summary": "高级",
+      "note": "默认值是本机实测最优。仅在需要规避特定问题时改动。",
+      "batch": "Batch",
+      "batchHelp": "逻辑批次大小",
+      "ubatch": "UBatch",
+      "ubatchHelp": "不大于 Batch。更大的批次占用更多内存，且不一定更快。",
+      "threads": "CPU 线程",
+      "threadsHelp": "本机 16 合适",
+      "parallel": "并发槽位",
+      "parallelHelp": "同时服务的请求数。超过 1 会多占数 GB 计算缓冲，长上下文下可能导致加载失败。",
+      "sharedVram": "允许使用共享显存",
+      "sharedVramHelp": "允许分配溢出到共享显存。这样更慢，仅在模型加载失败时才打开。",
+      "ngram": "n-gram 草稿预测",
+      "ngramHelp": "匹配已有文本来草拟。MTP 关闭时有用；与 MTP 同开会争抢同一份验证预算，通常更慢。",
+      "ngramRunning": "当前运行：n-gram 草稿预测{{state}}。",
+      "ngramPending": "尚未生效，保存后重新加载模型。",
+      "applyOnReload": "保存后重新加载模型生效。"
+    },
+    "footer": "保存不会打断正在进行的聊天。需要应用新参数时，先卸载模型再重新加载。"
+  },
+  "developer": {
+    "process": "模型进程",
+    "backend": "后端",
+    "state": "状态",
+    "launchParams": "启动参数",
+    "notStarted": "模型尚未启动",
+    "searchLogs": "搜索日志…",
+    "searchLogsLabel": "搜索日志",
+    "levelLabel": "日志级别",
+    "levelAll": "所有级别",
+    "levelWarning": "警告",
+    "levelError": "错误",
+    "pause": "暂停",
+    "resume": "继续",
+    "copy": "复制",
+    "export": "导出",
+    "logLabel": "模型运行日志",
+    "waiting": "等待模型日志…",
+    "autoscroll": "自动滚动"
+  }
+}

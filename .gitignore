@@ -1,0 +1,20 @@
+# upstream source and the runtime bootstrap/bootstrap.py builds from it
+src/
+bin/
+
+# the ROCm SDK and build tools, assembled locally (see README)
+toolchain/
+
+# model weights: multi-GB, not ours to redistribute
+models/
+*.gguf
+
+# machine-local output
+logs/
+tmp/
+config/
+__pycache__/
+*.pyc
+
+# measurement corpora: long prose, not ours to redistribute (see NOTICE)
+corpus/

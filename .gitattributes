@@ -1,0 +1,8 @@
+# No end-of-line translation, anywhere.
+#
+# This repository is built on files hashing to an exact value: bootstrap/UPSTREAM.json records the
+# SHA-256 of all 24 files the patch set produces, patches/iq3s-kernel/ is copied over a source tree
+# byte for byte, and tools/replay_bootstrap.py compares the result. A checkout that rewrote line
+# endings would fail every one of those checks, on Windows, for reasons that would take a day to
+# find. What is committed is what is checked out.
+* -text

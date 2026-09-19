@@ -1,0 +1,151 @@
+{
+  "title": "strixllama",
+  "subtitle": "Local model management",
+  "unload": "Unload model",
+  "backendHint": "Selected in config/jan/backend.json. Reload the model to switch.",
+  "nav": "strixllama management",
+  "state": {
+    "ready": "Running",
+    "loading": "Loading",
+    "stopped": "Not loaded",
+    "on": "on",
+    "off": "off",
+    "unknown": "not recorded",
+    "notLoaded": "not loaded",
+    "notStarted": "not started"
+  },
+  "tabs": {
+    "models": "Models",
+    "configuration": "Configuration",
+    "developer": "Developer log"
+  },
+  "notice": {
+    "loading": "Loading the model. Progress appears in the developer log.",
+    "loaded": "Model loaded.",
+    "unloaded": "Model unloaded, memory released.",
+    "saved": "Settings saved. The running instance keeps its parameters; they apply on the next load."
+  },
+  "models": {
+    "search": "Search models, architecture or quantisation…",
+    "searchLabel": "Search models",
+    "kindLabel": "File type",
+    "kindModel": "Language models",
+    "kindDraft": "MTP drafts",
+    "kindProjection": "Vision projectors",
+    "kindAll": "All files",
+    "roots": "Model directories",
+    "rootsHelp": "One local model directory per line",
+    "rootsSave": "Save and scan",
+    "rescan": "Rescan",
+    "colModel": "Model",
+    "colArchitecture": "Architecture",
+    "colQuant": "Quantisation",
+    "colSize": "Size",
+    "colState": "State",
+    "colActions": "Actions",
+    "shards": "{{count}} shards",
+    "incomplete": "Incomplete files",
+    "available": "Available",
+    "configure": "Configure",
+    "empty": "No matching models. Adjust the directories or the search.",
+    "loadingCatalog": "Reading local models…",
+    "summary": "{{count}} entries · shards merged · {{size}}",
+    "readOnly": "Model files stay read-only"
+  },
+  "config": {
+    "targetLabel": "Model to configure",
+    "save": "Save",
+    "load": "Load model",
+    "declaredContext": "declared context {{context}}",
+    "contextUnknown": "unknown",
+    "runtime": {
+      "flashAttention": "Flash Attention",
+      "qsa": "Sparse attention (QSA)",
+      "kv": "KV cache f16",
+      "weights": "Original weights",
+      "note": "Sparse attention and Flash Attention are always on for this architecture; turning either off runs out of memory above 64K context. Weights are used as quantised in the file."
+    },
+    "generation": {
+      "title": "Generation",
+      "thinking": "Thinking depth",
+      "thinkingNote": "This model's template accepts low, medium and xhigh only, and folds “high” into xhigh — so there is no fifth level to offer. A single request can override this with chat_template_kwargs.",
+      "thinkingLevel": {
+        "off": "Off",
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High"
+      },
+      "thinkingHelp": {
+        "off": "The model answers directly, with no reasoning step.",
+        "low": "Brief, focused reasoning that moves straight to the conclusion.",
+        "medium": "The model's own default: it reasons, with no instruction steering how much.",
+        "high": "Works through the task carefully, checks assumptions and weighs alternatives. Slowest."
+      }
+    },
+    "context": {
+      "title": "Context",
+      "length": "Context length",
+      "lengthHelp": "Token capacity reserved at load time",
+      "gpuLayers": "GPU layers",
+      "gpuLayersHelp": "999 offloads as many layers as fit"
+    },
+    "speculative": {
+      "title": "Speculative decoding",
+      "mtp": "MTP draft verification",
+      "mtpUnsupported": "Available for qwen4exp models",
+      "draftModel": "Draft model",
+      "draftMax": "Draft length",
+      "draftMaxHelp": "3 is fastest here; longer drafts cost more than they return",
+      "draftMin": "Stop-drafting threshold",
+      "draftMinHelp": "Confidence below which drafting stops. Acceptance rules are unchanged."
+    },
+    "vision": {
+      "title": "Image input",
+      "toggle": "Accept images",
+      "help": "Loads the vision projector so chats can include images. With it off, requests carrying an image are rejected.",
+      "cost": "Uses about 904 MB of GPU memory. Decode speed, prompt caching and MTP drafting are unaffected.",
+      "projector": "Vision projector",
+      "projectorAuto": "Automatic (ships with the model)"
+    },
+    "advanced": {
+      "summary": "Advanced",
+      "note": "Defaults are the measured best for this machine. Change these only to work around a specific problem.",
+      "batch": "Batch",
+      "batchHelp": "Logical batch size",
+      "ubatch": "UBatch",
+      "ubatchHelp": "Not larger than Batch. Larger batches use more memory and are not always faster.",
+      "threads": "CPU threads",
+      "threadsHelp": "16 suits this machine",
+      "parallel": "Concurrent slots",
+      "parallelHelp": "Requests served at once. More than one slot costs several GB of compute buffers and can prevent loading at long context.",
+      "sharedVram": "Allow shared GPU memory",
+      "sharedVramHelp": "Lets allocations spill out of the dedicated carve. This is slower; turn it on only when the model fails to load.",
+      "ngram": "n-gram drafting",
+      "ngramHelp": "Drafts by matching earlier text. Useful when MTP is off; alongside MTP it competes for the same verification budget and is usually slower.",
+      "ngramRunning": "Running: n-gram drafting {{state}}.",
+      "ngramPending": "Not yet applied. Reload the model after saving.",
+      "applyOnReload": "Reload the model after saving."
+    },
+    "footer": "Saving does not interrupt an ongoing chat. To apply new parameters, unload the model and load it again."
+  },
+  "developer": {
+    "process": "Model process",
+    "backend": "Backend",
+    "state": "State",
+    "launchParams": "Launch parameters",
+    "notStarted": "Model not started",
+    "searchLogs": "Search the log…",
+    "searchLogsLabel": "Search the log",
+    "levelLabel": "Log level",
+    "levelAll": "All levels",
+    "levelWarning": "Warnings",
+    "levelError": "Errors",
+    "pause": "Pause",
+    "resume": "Resume",
+    "copy": "Copy",
+    "export": "Export",
+    "logLabel": "Model log",
+    "waiting": "Waiting for the model log…",
+    "autoscroll": "Auto-scroll"
+  }
+}

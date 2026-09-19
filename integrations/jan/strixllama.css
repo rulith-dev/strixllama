@@ -1,0 +1,13 @@
+/* Keep log scrolling inside the viewport, independently of Jan's min-height layout. */
+.strixllama-logs {
+  overflow: scroll;
+  scrollbar-gutter: stable;
+  scrollbar-width: auto;
+  scrollbar-color: #71717a #18181b;
+  overscroll-behavior: contain;
+}
+.strixllama-logs::-webkit-scrollbar { width: 12px; height: 12px; }
+.strixllama-logs::-webkit-scrollbar-track,
+.strixllama-logs::-webkit-scrollbar-corner { background: #18181b; }
+.strixllama-logs::-webkit-scrollbar-thumb { background: #71717a; border: 2px solid #18181b; border-radius: 6px; }
+.strixllama-logs::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
