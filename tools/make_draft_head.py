@@ -13,8 +13,11 @@ Two stages, so the base draft tensors stay byte-identical:
 The loader creates model.output from the draft file when it is present (TENSOR_NOT_REQUIRED) and only
 falls back to the target's head when it is not, so nothing else changes.
 
-    python tools/make_draft_head.py --type iq4_xs
-    python tools/make_draft_head.py --type q4_0 --no-quantize-tool   # numpy Q4_0, no llama-quantize
+    python tools/make_draft_head.py --base <model dir>/mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf
+    python tools/make_draft_head.py --base ... --type q4_0 --no-quantize-tool   # numpy Q4_0, no llama-quantize
+
+The result lands beside the base, i.e. inside a registered model directory, which is the only place
+the manager lists drafts from; press Rescan afterwards and profile() prefers a *-head-* file.
 """
 import argparse
 import os
@@ -30,8 +33,29 @@ import numpy as np  # noqa: E402
 import gguf  # noqa: E402
 from gguf import GGUFReader, GGUFWriter, GGMLQuantizationType  # noqa: E402
 
-TARGET_SHARD = r"D:\models\unsloth\Qwen3.8-Flash-Next-GGUF\Qwen3.8-Flash-Next-UD-IQ4_XS-00002-of-00003.gguf"
 QUANTIZE = os.path.join(ROOT, "bin", "hip-rocm101", "llama-quantize.exe")   # what bootstrap --build installs
+
+
+def has_output_weight(path):
+    try:
+        return any(t.name == "output.weight" for t in GGUFReader(path).tensors)
+    except Exception:
+        return False
+
+
+def find_target(base):
+    """The target shard that holds output.weight: a non-draft, non-projector GGUF in the base's
+    directory. The head is written next to the base for the same reason the base is searched here -
+    the manager only lists files under a registered model directory, and Unsloth's mtp-*.gguf sits
+    beside the model it drafts for."""
+    folder = os.path.dirname(os.path.abspath(base))
+    for name in sorted(os.listdir(folder)):
+        low = name.lower()
+        if not low.endswith(".gguf") or low.startswith(("mtp-", "mmproj")) or "-head-" in low:
+            continue
+        if has_output_weight(os.path.join(folder, name)):
+            return os.path.join(folder, name)
+    sys.exit("no GGUF with output.weight next to %s; pass --target" % base)
 
 
 def copy_metadata(reader, writer):
@@ -60,13 +84,17 @@ def write_gguf(path, arch, reader_for_metadata, tensors):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base", default=os.path.join(ROOT, "models", "mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf"))
-    ap.add_argument("--target", default=TARGET_SHARD, help="target shard that holds output.weight")
+    ap.add_argument("--base", required=True, help="Unsloth's mtp-*-shared-*.gguf, kept next to the model")
+    ap.add_argument("--target", help="target shard that holds output.weight (default: found beside --base)")
     ap.add_argument("--type", default="iq4_xs", help="ggml type for the draft's head")
-    ap.add_argument("--out", help="default: <base>-head-<type>.gguf")
+    ap.add_argument("--out", help="default: <base>-head-<type>.gguf, beside the base so the manager lists it")
     ap.add_argument("--no-quantize-tool", action="store_true", help="quantize in numpy (q4_0/q8_0 only)")
     args = ap.parse_args()
     out = args.out or args.base.replace(".gguf", "-head-%s.gguf" % args.type)
+    if os.path.exists(out):
+        sys.exit("%s already exists" % out)
+    args.target = args.target or find_target(args.base)
+    print("target shard:", args.target)
 
     base = GGUFReader(args.base)
     arch = base.fields[gguf.Keys.General.ARCHITECTURE].contents()
@@ -93,8 +121,7 @@ def main():
         del f32
         print("wrote %s, quantizing with llama-quantize ..." % tmp_f32)
         import manager
-        m = manager.model_by_id("ba09dd01dc9c5fd1df9d")
-        env = manager.runtime_environment(manager.validate_profile(manager.profile(m), m))
+        env = manager.runtime_environment({})   # the bundled ROCm on PATH, nothing model-specific
         p = subprocess.run([QUANTIZE, "--output-tensor-type", args.type, tmp_f32, tmp_q, "q8_0"],
                            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
         if p.returncode != 0:

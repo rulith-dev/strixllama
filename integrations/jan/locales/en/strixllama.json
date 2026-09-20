@@ -96,6 +96,8 @@
       "mtp": "MTP draft verification",
       "mtpUnsupported": "Available for qwen4exp models",
       "draftModel": "Draft model",
+      "draftMissing": "not in a scanned directory",
+      "draftHelp": "Only files under the registered model directories are listed. A *-head-* draft (tools/make_draft_head.py) is ~5–9% faster than Unsloth's shared-* file and is preferred automatically once it sits beside the model and the list is rescanned.",
       "draftMax": "Draft length",
       "draftMaxHelp": "3 is fastest here; longer drafts cost more than they return",
       "draftMin": "Stop-drafting threshold",

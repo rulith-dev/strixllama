@@ -246,7 +246,11 @@ class ManagerTests(unittest.TestCase):
             self.assertEqual(Path(m.family_draft()).resolve(),shared.resolve())
             model={**self.model,'path':str(self.file.with_name(m.MODEL_FAMILY+'-UD-IQ4_XS.gguf'))}
             self.assertEqual(Path(m.profile(model)['draft']).resolve(),shared.resolve())
-            shared.unlink();m.catalog(True)
+            # a head made by tools/make_draft_head.py beside the model wins over the shared file
+            head=self.file.with_name('mtp-'+m.MODEL_FAMILY+'-shared-Q4_K_M-head-iq4_xs.gguf');gguf(head)
+            m.catalog(True)
+            self.assertEqual(Path(m.profile(model)['draft']).resolve(),head.resolve())
+            head.unlink();shared.unlink();m.catalog(True)
             with self.assertRaisesRegex(ValueError,'草稿'):m.validate_profile({'mtp':True},model)
     def test_saving_configuration_does_not_start_a_process(self):
         m.catalog(True)

@@ -112,16 +112,24 @@ one is missing.
 the model: the manager looks for it there. Without it the server has no multimodal capability at all
 and rejects any request carrying an image. It costs 904 MB of GPU memory and nothing else.
 
-**The MTP draft** — start from Unsloth's `mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf`, then give it its
-own output projection:
+**The MTP draft** — Unsloth's `mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf` (or `-shared-Q8_0`, under
+1% apart) next to the model works as it is: the manager picks it up and every figure in this
+repository except the last 5–9% of decode was measured with a draft like it. To get that last part,
+give the draft its own output projection:
 
 ```bash
-python tools/make_draft_head.py --type iq4_xs --base <the shared-Q4_K_M file> --target <shard holding output.weight>
+python tools/make_draft_head.py --base <model directory>/mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf
 ```
 
-The `shared-*` drafts borrow the target's Q6_K head, which streams 521 MB on every draft step — 2.4 ms
-of a 4.3 ms step. Every drafted token is verified by the target, so a coarser head can only cost
-acceptance, and at IQ4_XS acceptance did not move: worth +5% on English and +9% on Chinese.
+The result is written beside the base as `…-shared-Q4_K_M-head-iq4_xs.gguf` (the target shard holding
+`output.weight` is found in the same directory; `--target` overrides). Keep it there: the
+configuration page only lists drafts found under the registered model directories, so a copy kept
+elsewhere never appears in it. Press *Rescan* on the Models page and the `*-head-*` file is
+preferred automatically for every profile that has not chosen a draft by hand.
+
+Why it helps: the `shared-*` drafts borrow the target's Q6_K head, which streams 521 MB on every
+draft step — 2.4 ms of a 4.3 ms step. Every drafted token is verified by the target, so a coarser
+head can only cost acceptance, and at IQ4_XS acceptance did not move: +5% on English, +9% on Chinese.
 
 ### Already have them in LM Studio? Nothing to download
 

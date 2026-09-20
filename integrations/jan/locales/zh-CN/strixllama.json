@@ -96,6 +96,8 @@
       "mtp": "MTP 草稿验证",
       "mtpUnsupported": "仅 qwen4exp 架构可用",
       "draftModel": "草稿模型",
+      "draftMissing": "不在已登记的模型目录中",
+      "draftHelp": "只列出已登记模型目录下的文件。带 *-head-* 的草稿（tools/make_draft_head.py 生成）比 Unsloth 的 shared-* 文件快 5–9%，放到模型旁边并重新扫描后会被自动优先选用。",
       "draftMax": "草稿长度",
       "draftMaxHelp": "本机 3 最快；更长的草稿付出的代价超过收益",
       "draftMin": "停止草拟阈值",

@@ -170,7 +170,8 @@ export default function StrixLlamaPage({ view }: { view: View }) {
           <h2 className="mb-5 font-medium">{tr('config.speculative.title')}</h2>
           <label className="flex items-center justify-between gap-4 text-sm"><span className="font-medium">{tr('config.speculative.mtp')}</span><Switch id="mtp" checked={profile.mtp} disabled={!qsaSupported} onCheckedChange={v => field('mtp', v)} /></label>
           {!qsaSupported && <p className="mt-2 text-xs text-muted-foreground">{tr('config.speculative.mtpUnsupported')}</p>}
-          <label className="mt-4 block text-sm">{tr('config.speculative.draftModel')}<select className={`${selectClass} mt-2 w-full`} value={profile.draft} onChange={e => field('draft', e.target.value)} disabled={!profile.mtp}>{catalog?.models.filter(m => m.role === 'draft').map(m => <option key={m.id} value={m.path}>{m.filename}</option>)}</select></label>
+          <label className="mt-4 block text-sm">{tr('config.speculative.draftModel')}<select className={`${selectClass} mt-2 w-full`} value={profile.draft} onChange={e => field('draft', e.target.value)} disabled={!profile.mtp}>{/* a saved draft outside the scanned directories would otherwise render as whichever option comes first */}{profile.draft && !catalog?.models.some(m => m.role === 'draft' && m.path === profile.draft) && <option value={profile.draft}>{profile.draft.split(/[\\/]/).pop()} — {tr('config.speculative.draftMissing')}</option>}{catalog?.models.filter(m => m.role === 'draft').map(m => <option key={m.id} value={m.path}>{m.filename}</option>)}</select></label>
+          <p className="mt-2 text-xs text-muted-foreground">{tr('config.speculative.draftHelp')}</p>
           <div className="mt-5 grid grid-cols-2 gap-5">
             {numeric(tr('config.speculative.draftMax'), 'draft_max', tr('config.speculative.draftMaxHelp'), 1, 8)}
             {numeric(tr('config.speculative.draftMin'), 'draft_min', tr('config.speculative.draftMinHelp'), 0, 1, 0.05)}
