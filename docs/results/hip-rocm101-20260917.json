@@ -1,0 +1,1035 @@
+{
+ "date": "2026-09-17",
+ "what": "pwilkin strix-halo f5daaa3 HIP branch rebuilt against TheRock ROCm 10.1 on Windows, LLAMA_MMB_HC16=0",
+ "model": "unsloth Qwen3.8-Flash-Next UD-IQ4_XS (unchanged)",
+ "fix": "LLAMA_MMB_HC16=0 removes the '////////' corruption reported on 2026-09-13 (bisected by olliehm, pwilkin/llama.cpp#24)",
+ "sdk": "rocm 10.1.0a20260910 via pip --index-url https://nightly.repo.amd.com/rocm/whl-next/ into toolchain/rocm-venv",
+ "prefill_tok_s": {
+  "vulkan_production_real_use": [
+   278,
+   290
+  ],
+  "vulkan_best_bench_16k": 383,
+  "hip_rocm7.1_ctx262144_ub8192_16k": 458,
+  "hip_rocm7.1_ctx262144_ub8192_64k": 464,
+  "hip_rocm10.1_ctx262144_ub4096_16k": 639,
+  "hip_rocm10.1_ctx262144_ub8192_16k": [
+   674,
+   730,
+   765
+  ],
+  "hip_rocm10.1_ctx262144_ub8192_64k": 719,
+  "hip_rocm10.1_ctx262144_ub16384_16k": 735,
+  "hip_rocm10.1_ctx32768_ub16384_16k": [
+   745,
+   803
+  ],
+  "olliehm_reference_96gb_carve": [
+   964,
+   1045
+  ]
+ },
+ "decode_tok_s_no_mtp": {
+  "hip_tiny": 18.9,
+  "hip_16k": 15.2,
+  "hip_64k": 9.5,
+  "vulkan_tiny": 25.3,
+  "vulkan_mtp_9k": [
+   24,
+   40
+  ],
+  "vulkan_mtp_232k": 13.1
+ },
+ "quality": {
+  "hip_ppl_en_code_12chunks": "2.3807 +/- 0.04070",
+  "vulkan_baseline": "2.3840",
+  "math_probe": "17*23 -> 391 correct"
+ },
+ "memory": {
+  "dedicated_used_gb": 63.7,
+  "shared_used_gb": 9.0,
+  "carve_gb": 64,
+  "note": "the 64 GB carve is saturated by a 93.7 GB model; olliehm runs a 96 GB carve"
+ },
+ "artifacts": {
+  "runtime": "bin/hip-rocm101",
+  "source": "src/pwilkin-full-hip-f5daaa3",
+  "build": "scripts/build-hip-rocm101.bat",
+  "launcher": "scripts/run-hip-trial.ps1",
+  "sweep": "tools/hip_sweep.py",
+  "ppl": "scripts/hip-perplexity.ps1"
+ },
+ "carve_96gb_20260917": {
+  "note": "BIOS UMA carve raised 64 -> 96 GB; system RAM drops to 31.6 GB. Measured through the Jan manager, ctx 262144 / batch 8192 / ubatch 8192 / FA on unless stated.",
+  "prefill_decode": {
+   "qsa_on_mtp_off": {
+    "16K": [
+     871.7,
+     20.19
+    ],
+    "64K": [
+     880.7,
+     13.87
+    ],
+    "78K": [
+     782.4,
+     13.15
+    ]
+   },
+   "qsa_on_mtp_on": {
+    "16K": [
+     783.3,
+     22.99
+    ],
+    "64K": [
+     821.6,
+     17.99
+    ]
+   },
+   "qsa_off_mtp_off": {
+    "16K_ctx32768": [
+     755.5,
+     20.69
+    ],
+    "16K_ctx65536": [
+     748.8,
+     21.01
+    ],
+    "64K_ctx65536": "ROCm error: out of memory",
+    "ctx262144": "OOM on first long request"
+   }
+  },
+  "vs_64gb_carve": {
+   "qsa_on_mtp_off_78K": [
+    703,
+    719
+   ],
+   "qsa_on_mtp_on": 638
+  },
+  "mtp_fix": "the draft context copied the target ubatch and asked for 3488 MiB; FASTLLM_SPEC_DRAFT_UBATCH=2048 (patches/apply_spec_draft_ubatch.py, set by manager.py) restores ctx 262144 + ub 8192 + MTP",
+  "qsa_switch": "Jan's QSA toggle now drives HIP_QSA_GATES in manager.py; this branch has no context threshold so the Jan threshold setting is inert. Turning QSA off makes attention dense and OOMs above ~32-64K context: keep it on.",
+  "trap": "CORRECTED 2026-09-17: llama-bench DOES support -lm/-lzm (tools/llama-bench/llama-bench.cpp:479-480). The earlier claim that it lacks --load-mode none was wrong, and acting on it is what thrashed the page file: the run that thrashed simply omitted the flags. Always pass -lm none -lzm on-direct, as the upstream journey command line does.",
+  "short_chat_decode": {
+   "method": "tools/multiturn_test.py, 32-token prompt -> ~400-token answer, no long context involved",
+   "hip_ctx262144_ub8192_no_mtp": 23.1,
+   "hip_ctx262144_ub8192_mtp": [
+    24.6,
+    30.7
+   ],
+   "vulkan_ctx65536_ub2048_no_mtp": [
+    26.5,
+    26.8
+   ],
+   "baseline_64gb_carve": {
+    "hip_tiny": 18.9,
+    "vulkan_tiny": 25.3
+   }
+  },
+  "vulkan_cannot_load_production_profile": {
+   "verdict": "at the 96 GB carve Vulkan cannot load ctx 262144 / ubatch 8192 at all",
+   "error": "ggml_gallocr_reserve_n_impl: failed to allocate Vulkan_Host buffer of size 23878008960 (22.24 GB) -> graph_reserve: failed to allocate compute buffers",
+   "cause": "the compute graph needs a 22.2 GB HOST buffer; the carve left only 31.6 GB system RAM. Independent of the weights and of ngram_cpu (fails the same with -ot per_layer_token_embd=CPU on or off).",
+   "workaround": "loads at ctx 65536 / batch 2048 / ubatch 2048 - a quarter of the context",
+   "note": "putting the n-gram table on GPU instead (ngram_cpu off) does not help: same 22.2 GB host buffer, plus an 8 GB CPU buffer failure"
+  },
+  "head_to_head_vs_pwilkin_journey": {
+   "command": "llama-bench -ngl 999 -fa on -ctk f16 -ctv f16 -lm none -lzm on-direct -b 24576 -ub 24576 -p 16384 -n 128 -d 0 -r 3",
+   "ours_f5daaa3_rocm101_nightly_windows": {
+    "pp16384": "891.49 +/- 17.25",
+    "tg128": "22.94 +/- 0.31"
+   },
+   "pwilkin_step15_rocm100_retained_pm4_linux": {
+    "pp16384": "1160.02 +/- 1.89",
+    "tg128": "26.68 +/- 0.47"
+   },
+   "ratio": {
+    "prefill": 0.77,
+    "decode": 0.86
+   },
+   "ruled_out": [
+    "measurement method (server 871.7 vs bench 891.5 at 16K)",
+    "batch size (ub 8192 -> 24576 is only +2%)",
+    "quantization (halogen 0.7.0 reports 1400+ on UD-IQ4_XS itself)"
+   ],
+   "open": "whether f5daaa3 (fetched 2026-09-13) contains journey steps 11-15; step 11 alone is 499 -> 1181 t/s",
+   "environment_difference": "pwilkin states ROCm 10.0 with retained-PM4 HIP and ROCr runtimes - non-stock. \"Retained PM4\" matches warpfront/redline (Apache-2.0, gfx1151 supported) which is Linux-only, so it cannot be lifted to Windows as-is."
+  }
+ },
+ "upstream_head_b0f31f58_20260917": {
+  "what": "rebuilt from strix-halo HEAD b0f31f58 (10 commits past journey step 15, none of them benchmarked upstream)",
+  "source_parity": "f5daaa3 already contains ALL 16 journey step commits including step 11 (964c6f2f, the 499->1181 one). The 891 vs 1160 gap was never missing source work.",
+  "windows_port": "HEAD does not compile on Windows: upstream llama_lazy_reader has a GGML_ABORT stub for _WIN32 and prefetch() exists only in the POSIX branch (qwen4exp.cpp:1745). The working Windows overlapped-ReadFile reader was always OUR patch, never upstream. patches/apply_win_lazy_reader.py carries it forward (POSIX paths are byte-identical to upstream, so nothing upstream does to them is lost).",
+  "result": {
+   "pp16384": 751.98,
+   "tg128": 22.37,
+   "reps": 1,
+   "note": "after the load_lazy_reader fix; runtime path printed and verified"
+  },
+  "verdict": "MEASURED FAIRLY AT LAST: with the mmap-fallback bug fixed and the runtime path verified on both runs, upstream HEAD b0f31f58 is -7.3% prefill and -3.2% decode versus f5daaa3 on this configuration (751.98/22.37 vs 810.82/23.11, one rep each, same warm cache, byte-identical reader). The 10 post-journey commits do not pay off here. Keep f5daaa3 as the base; carry the reader work over as a patch.",
+  "staged_at": "bin/hip-b0f31f58 (not wired into the manager; bin/hip-rocm101 remains production)",
+  "retracted": "Two earlier statements were wrong and are withdrawn: (1) \"no regression, +3%\" - the 852.85 and 827.10 runs both executed bin/hip-rocm101 because a sed on a temp script never substituted the runtime path, so they compared the old build with itself; (2) \"prefill swings 4x on page-cache state\" - that compared the new build cold against the old build warm, never one binary in both states. The old build has NOT been measured cold. What does stand: same old binary, -lzm on = 210.63 vs on-direct = 827-891.",
+  "lesson": "print the resolved runtime path in every benchmark run (hip-bench.ps1 now does), and never filter a bench log to error|failed only.",
+  "old_build_same_conditions": {
+   "pp16384": 810.82,
+   "tg128": 23.11,
+   "reps": 1
+  }
+ },
+ "ple_read_fusion": {
+  "question": "is the HIP PLE row gather fused the way our Vulkan one is?",
+  "answer": "NO, and measured: 3245 bytes of physical disk read per PLE row lookup against a 90-byte row (36.1x amplification, 0.79 of the 4096-byte page ceiling). 55485-token prefill = 2747.7 MB read, 887760 lookups, ~12.6K IOPS. Disk bandwidth is not the limit (39 MB/s); the count of round trips and the cache waste are.",
+  "vulkan_contrast": "our Vulkan path (OPTIMIZATION.md) sorts, dedups AND merges adjacent ranges in llama-mmap.cpp, then batch-prefetches pages: measured ~63 KiB/fault down to ~8 KiB/fault.",
+  "caveat": "the 891 t/s build already runs this unfused path, so it is not the current bottleneck - it is a standing cost at 16 rows/token, and a transferable optimization we have already validated once.",
+  "why_adjacent_merging_will_not_help": "lookups are hash-derived over 16 heads x ~20M rows each; at 16384 tokens that is a density of ~1/1221, so sorted neighbours average ~110 KB apart and same-page collisions are ~3.7%. Merging adjacent ranges - what our Vulkan path does - barely fires here.",
+  "what_would_help": "the page cache holds 4 KiB pages of which we use 90 bytes, so ~20 GB of free RAM caches only ~0.44 GB of useful rows. Unbuffered reads (FILE_FLAG_NO_BUFFERING) plus our own row-granular userspace cache would let the same RAM hold ~45x more rows."
+ },
+ "page_cache_dominates_prefill": {
+  "finding": "RETRACTED as stated - see upstream_head_b0f31f58_20260917.retracted. The cold-vs-warm swing was a cross-binary artefact. Whether cache state matters for one binary is unmeasured.",
+  "measured_pp16384": {
+   "on-direct warm": 852.85,
+   "on-direct cold": 212.59,
+   "mmap lazy (-lzm on)": 210.63
+  },
+  "mmap_verdict": "RETRACTED: -lzm on is 4.2x slower not because mmap is bad but because load_lazy_reader returns nullptr unless lazy.mode == LLAMA_LAZY_MODE_DIRECT (llama-model.cpp:1867), so qwen4exp_ple_prefetch early-returns and there is NO prefetch and no concurrency at all. Vulkan reads the same ~3.2 KB per lookup as HIP (380 t/s x 16 x 3289 B = the same 20 MB/s), so read amplification does not distinguish the two paths.",
+  "carve_tension": "the 96 GB carve raised prefill (783 -> 880) but cut system RAM 63 -> 31.6 GB, which is what starves the PLE cache. These pull in opposite directions and the balance has never been measured.",
+  "hypothesis_for_the_pwilkin_gap": "a smaller carve leaves enough RAM to hold the whole 28.8 GB table resident, i.e. permanently in our warm state. Testable in BIOS.",
+  "tool": "tools/ple_read_amp.py"
+ },
+ "ple_io_concurrency_20260917": {
+  "finding": "the PLE gather runs at ~10% of the concurrency it is configured for; the SSD is not the limit",
+  "measured": {
+   "read_iops": 39586,
+   "latency_us": 172,
+   "mb_s": 160.5,
+   "queue_depth_measured": 6.1,
+   "queue_depth_littles_law": 6.8,
+   "reader_workers": 64,
+   "prefill": "55422 tokens in 74.2 s (747.7 t/s)",
+   "serialized_would_be_s": 153,
+   "actual_s": 74.2,
+   "overlap_factor": 2.1
+  },
+  "cause": "each worker does read_at then GetOverlappedResult(..., TRUE), so it holds exactly one outstanding I/O; gather() also spawns and joins its workers on every call, once per ubatch.",
+  "fix": "keep several requests in flight per worker (or IOCP / ReadFileScatter) and reuse a persistent worker pool. Costs no RAM, unlike the userspace row cache.",
+  "supersedes": "the row-cache proposal is NOT the first lever: that trades RAM for I/O, but the I/O is not saturated.",
+  "also_explains": "the 4x cold/warm prefill swing - cold means real disk reads, and that path runs at 10% efficiency. Fixing concurrency should narrow the swing on its own.",
+  "caveat": "counters sample at ~1 s while the gather is bursty, so 6.1 is a busy-window average and a lower bound on burst concurrency; the independent Little's law figure of 6.8 agrees.",
+  "tool": "tools/ple_io_depth.py"
+ },
+ "ple_gather_shape_20260917": {
+  "observed": "FASTLLM_PLE_TRACE on the OLD build prints WIN_PLE_GATHER rows=16 - one token (16 heads) per gather call, at least in the phase captured (26 lines, consistent with tg128)",
+  "implication": "n_workers = min(n_threads, max(1, n/32)) is 1 for n=16, so those gathers are single-threaded sequential 90-byte reads; the printed workers=64 is n_threads, not n_workers",
+  "open": "whether the pp16384 phase also gathers per-token or batches per ubatch - the instrumented b0f31f58 build (PLE_GATHER ... ms=) answers this once it runs on the real reader",
+  "tools": [
+   "tools/ple_io_depth.py",
+   "scripts/hip-bench.ps1 -Trace"
+  ],
+  "measured_on_the_real_reader": {
+   "prefill": "gather is per ubatch: 262144 rows (16384 tokens x 16 heads), ~262030 unique, 64 workers, 3084 ms and 3818 ms (warmup + rep)",
+   "decode": "gather is per token: 16 rows, 1 worker (n/32 rounds to 1), 2.0-6.8 ms each, median 3.0 ms",
+   "share": "prefill: 3.1-3.8 s of a ~21.8 s pp16384 = 14-17%, synchronous in set_input with the GPU idle. decode: 3-7 ms of a 44.7 ms step = 7-15%.",
+   "per_row_per_worker": "262034 rows / 3.084 s / 64 workers = ~750 us per row per worker against a 172 us disk latency: the workers are not I/O-bound at depth 1"
+  },
+  "fix_in_flight": "llama_lazy_reader::run_range_overlapped - up to 16 overlapped ReadFiles in flight per worker, round-robin completion preserving issue order, short reads finished via read_at. Applies to both shapes: 16 concurrent reads for the decode gather, 64 x 16 in flight for prefill. Windows branch only; POSIX untouched."
+ },
+ "matrix_20260917_final": {
+  "method": "llama-bench -lm none -lzm on-direct -b 24576 -ub 24576 -p 16384 -n 128 -d 0 -r 3, same warm cache, runtime path printed and verified on every run",
+  "results": {
+   "depth1_unified1": {
+    "pp16384": "867.12 +/- 24.11",
+    "tg128": "23.54 +/- 0.56"
+   },
+   "depth1_unified0": {
+    "pp16384": "903.64 +/- 3.71",
+    "tg128": "23.66 +/- 0.22"
+   },
+   "depth16_unified1": {
+    "pp16384": "875.30 +/- 5.25",
+    "tg128": "23.30 +/- 1.70"
+   },
+   "depth16_unified0": {
+    "pp16384": "884.97 +/- 13.32",
+    "tg128": "24.40 +/- 0.38"
+   }
+  },
+  "winner": "GGML_HIP_ENABLE_UNIFIED_MEMORY=0: +4.2% prefill and the run-to-run spread drops from +/-24.11 to +/-3.71. One env var, no code. Adopted in tools/manager.py.",
+  "overlapped_reader_verdict": "the depth-16 gather is NOT a prefill win - 884.97 against 903.64 with unified off, i.e. slightly negative. It is worth +3.1% on decode (24.40 +/- 0.38 vs 23.66 +/- 0.22, error bars do not overlap) and it cuts the per-token decode gather from a 3.0 ms median to 0.8 ms, which also removes jitter. Gather time fell 26-38% on prefill without moving throughput, so the gather was not on the critical path: qwen4exp_ple_prefetch (detached thread, warms the cache one batch ahead) was already hiding it.",
+  "retracted": "an earlier +9% claim for the overlapped reader compared a 3-rep run against a single-rep 810.82 baseline. The honest 3-rep baseline is 867-904. Never compare across different rep counts."
+ },
+ "ssd_ceiling_20260917": {
+  "tool": "tools/ssd_random_read.py (buffered reads against the model GGUF, server unloaded)",
+  "random_4k_app_iops": {
+   "d1": 5397,
+   "d8": 51779,
+   "d16": 111401,
+   "d32": 117707,
+   "d64": 94864,
+   "d128": 80337
+  },
+  "peak": "117707 IOPS / 482 MB/s at depth 32",
+  "gather_vs_ceiling": "the depth-16 PLE gather does 262034 rows in 2.284 s = 114727 IOPS, i.e. 97.5% of that peak. The depth-1 gather did 84965 IOPS = 72%. So the unfused path IS at the practical ceiling of this access pattern: 262144 page reads cannot take less than ~2.23 s without reducing the NUMBER of reads.",
+  "what_that_costs": "that 2.23 s is 12.3% of a pp16384 run at 903 t/s (18.1 s). Removing it entirely is worth ~1030 t/s.",
+  "caveat_512b": "a 512-byte run measured 142203 IOPS at depth 16, but Python reads are buffered so the device still faults 4 KiB pages - that number is application-level and does NOT demonstrate a device-level win. Proving it needs FILE_FLAG_NO_BUFFERING.",
+  "suspicion": "482 MB/s of random 4 KiB is low for this class of NVMe, so the ceiling we hit is likely the Windows cache-manager fault path rather than the drive - which is the argument for unbuffered sector-granular reads plus our own row cache."
+ },
+ "vulkan_ple_fusion_mechanism": {
+  "what_it_actually_does": "llama_mmap_row_pages maps each row index to its page(s), sorts, dedups at PAGE granularity, merges consecutive pages into ranges, and prefetch_rows hands ALL ranges to a single PrefetchVirtualMemory call (one posix_madvise per range on POSIX). It is not one read per 8 rows - it is one batched submission, which is what lifts the queue depth.",
+  "bytes_are_the_same": "Vulkan reads ~3289 B per lookup (380 t/s x 16 lookups vs the reported 20 MB/s) against HIP's measured 3245 B. Read amplification does not distinguish the two backends; only submission batching and concurrency do.",
+  "where_the_8_could_come_from": "a 4 KiB page holds ~45 rows of 90 B; a 512 B sector holds ~5.7. Unbuffered sector-granular reads would be the 8x, not the page-merging path. Unproven - see ssd_ceiling_20260917.caveat_512b."
+ },
+ "quant_format_is_the_gap_20260917": {
+  "finding": "the 903 vs 1160 prefill gap is the MODEL FILE, not the backend, the SDK or Windows",
+  "mechanism": "mmb.cu:664 gates the bf16 WMMA fast path on IQ4_NL / Q8_0 / Q6_K only. Unsloth UD-IQ4_XS is a mixed quant whose body (64.9 GB, excluding the 28.8 GB PLE table) is 52.2% IQ3_S - 94 tensors, 33.9 GB - which has no MMB dequant kernel and falls back to the stock MMQ DP4A path (mmq.cuh:412 MMQ_DP4A_TXS_Q8_0). Only 31.3% of body weights reached the matrix cores. pwilkin benchmarks Qwen3.8-Flash-Next-IQ4_NL-*-of-00009.gguf, i.e. 100% coverage.",
+  "proof": {
+   "model": "D:/models/requant/Qwen3.8-Flash-Next-IQ4_NL.gguf, 101.03 GB, 99.2% IQ4_NL (811 tensors), llama-quantize --allow-requantize from UD-IQ4_XS, 31 min",
+   "ud_iq4_xs": {
+    "pp16384": "903.64 +/- 3.71",
+    "tg128": "23.66 +/- 0.22"
+   },
+   "all_iq4_nl": {
+    "pp16384": "1020.52 +/- 22.44",
+    "tg128": "27.88 +/- 0.48"
+   },
+   "delta": "+12.9% prefill, +17.8% decode, same binary and flags (UNIFIED=0), 3 reps each",
+   "closes": "the gap to pwilkin 1160 goes from 78% to 88%"
+  },
+  "blocker": {
+   "ppl": "2.6308 +/- 0.04636 against the 2.3840 baseline (2.3807 for HIP on UD-IQ4_XS), same corpus and 12 chunks",
+   "why": "double quantization - IQ3_S at 3.4 bpw cannot be restored by storing it at 4.5 bpw, and the requantize adds its own error",
+   "verdict": "this FILE proves the hypothesis but is +10.4% PPL and must not become the daily driver"
+  },
+  "ways_to_get_both": {
+   "A_quantize_from_bf16": "unsloth BF16 is 354.0 GB over 8 shards and only 341 GB is free - delete the 101 GB requant first. A flat IQ4_NL at 4.57 bpw carries MORE bits than UD-IQ4_XS at 4.24, so from the real source it should match or beat the baseline.",
+   "B_iq3s_dequant_kernel": "give MMB a native IQ3_S dequant (what mmb_dq_row36 is for IQ4_NL). Lossless, keeps the existing file, and is the same shape of work as upstream commit 40a9f4d0 which added Q4_K (336-line mmb-quant.cuh + 165 lines of dequantize.cuh).",
+   "not_viable": "a bf16 shadow of the IQ3_S tensors would be 33.9 GB * 16/3.4 = ~159 GB, far past mmb_shadow_cap (6 GB)."
+  }
+ },
+ "iq3s_mmb_kernel_20260917": {
+  "what": "taught the MMB fused-GLU mmid kernel to dequantize IQ3_S, so ffn_gate_exps/ffn_up_exps reach the bf16 WMMA path",
+  "why_those_tensors": "the 94 IQ3_S tensors are exactly blk.N.ffn_gate_exps x47 and blk.N.ffn_up_exps x47; ffn_down_exps is already IQ4_NL. gate and up are the two inputs of the fused GLU kernel, so one kernel covers all of them.",
+  "changes": [
+   "mmb_dq_row_iq3s: 64 weights = a quarter of a 110-byte 256-weight superblock, five scattered pieces (d at 0, 16 qs bytes at 2+16q, 2 qh at 66+2q, 8 signs at 74+8q, one scales byte at 106+q whose nibbles split the halves)",
+   "mmb_tile_gemm_glu and mmb_routed_glu_kernel templated on WT (0 = IQ4_NL, 3 = IQ3_S)",
+   "ggml_cuda_mmb_supported_mmid grew an allow_iq3s flag defaulting to false, because the PLAIN mmid kernel still assumes the 36-byte IQ4_NL step",
+   "ggml_cuda_mmb_supported_glu requires gw->type == uw->type and accepts IQ3_S, and guards K % 256 == 0"
+  ],
+  "verified_engaged": "MMB_GLU fused gate/up+swiglu: M=640 K=2560 rows=5120 store_f32=0 type=IQ3_S",
+  "quality": "PPL 2.3786 +/- 0.04063 against the 2.3807 baseline - numerically sound, quality neutral, ORIGINAL model file unchanged",
+  "performance": {
+   "pp16384": "927.32 +/- 9.66 vs 903.64 +/- 3.71 = +2.6%",
+   "tg128": "25.11 +/- 0.13 vs 23.66 +/- 0.22 = +6.1%"
+  },
+  "captures_only_part": "the all-IQ4_NL requant reached 1020.52 / 27.88, so this recovers 20% of the prefill gap and 34% of the decode gap. The requant also converted 502 q8_0 tensors (ffn_*_shexp, hc_attn_*) to IQ4_NL, halving their bytes - that is a separate effect this kernel does not address.",
+  "known_deficiency": "RESOLVED in v2: load_regs prefetches the 29 bytes into registers, store_lds only dequantizes.",
+  "build": "bin/hip-iq3s",
+  "performance_v2_prefetch": {
+   "pp16384": "946.06 +/- 4.52",
+   "tg128": "25.26 +/- 0.22",
+   "vs_baseline": "+4.7% prefill, +6.8% decode",
+   "ppl": "2.3786 +/- 0.04063 (baseline 2.3807) - unchanged",
+   "note": "restoring the register prefetch in load_regs added +2.0% prefill over v1 and halved the spread (9.66 -> 4.52)"
+  },
+  "reinstatement_attempt_20260918": {
+   "why": "the 2026-09-17 rollback blamed this kernel for a truncation that was really the speculative verification leak (qsa_verification_leak_fix_20260918)",
+   "runtime": "bin/hip-rocm101-iq3s = fixed production llama.dll + the tree's ggml-hip.dll (IQ3_S dequant, sigmoid fusion, graph-trace instrumentation)",
+   "quality_gates_passed": {
+    "ppl_ctx4096_ub4": "2.4646 (identical to the non-IQ3_S fixed runtime: MMB is not engaged below LLAMA_MMB_MIN_T, so small batches are unchanged)",
+    "ppl_ctx4096_ub512": "2.4741 +/- 0.04329 vs 2.4724 without IQ3_S",
+    "ppl_ctx2048": "2.3786 +/- 0.04063 (the earlier record)",
+    "multiturn_mtp_6x1500": "6/6 to the limit, six distinct turns, 24.7-26.4 tok/s",
+    "decode_600_tokens_spec_off": "23.87 tok/s vs 23.81, byte-identical text"
+   },
+   "blocker": "tools/production_bench.py (saved profile: ctx 262144, ub 8192, MTP + n-gram) dies on the 55422-token prefill: after the third 8192-token ubatch (n_tokens = 32768, running at 1176 t/s) `decode() failed: bad allocation` (logs/spec-pb-hip-rocm101-iq3s-server.log); with LLAMA_MMB_CACHE=0 the process crashes outright (connection reset). The fixed non-IQ3_S runtime completes the same run at 763.8 t/s, 29.9 tok/s prose, 64.75 coding. So the kernel is quality-clean but the build carrying it is not stable on deep prefill at this carve",
+   "decision": "NOT promoted. The MMB dequant cache is a device pool allocation, so the std::bad_alloc is host-side; find what the IQ3_S/GLU path allocates per ubatch before retrying (tree state = this build)",
+   "blocker_resolved_20260918": {
+    "what_it_really_is": "the Windows commit limit, not the kernel. This box has 31.6 GB visible RAM and an automatically managed page file (94.2 GB allocated, max ~3x RAM), so the commit limit is 123.6 GB. A server at ctx 262144 / ub 8192 with MTP commits 91.5 GB at prefill peak (device allocations from the 96 GB carve are charged to the process), and the whole system sits at 126.3-127.4 GB while the page file expands - allocations that land faster than the expansion get std::bad_alloc ('bad allocation').",
+    "evidence": {
+     "repeats_ctx262144_55k_prefill": "IQ3_S runtime 4 fails / 8 runs (bad allocation, always right after the fourth 8192-token ubatch), production runtime 0 / 7 - both peaking at 91.2-91.7 GB process commit and 126.3-127.4 GB system commit (tools/memwatch.ps1)",
+     "repeats_ctx131072": "IQ3_S runtime 3 / 3 pass at 792-831 t/s, process commit peak 84.4 GB, system commit 122.3-123.4 GB (under the limit)",
+     "gates_off_do_not_matter": "LLAMA_MMB_GLU=0 and FASTLLM_NO_SIGMOID_FUSE=1 fail the same way; the IQ3_S kernel is not the allocator"
+    },
+    "also_found": "LLAMA_MMB_CACHE=0 crashes outright: mmb_cache_insert() erases g_mmb_cache.front() when size() >= 0 on an empty vector (mmb.cu:640). Unsupported value, pre-existing.",
+    "fix_options": [
+     "set a fixed page file (initial = max, e.g. 160 GB on C:, 1.1 TB free): lifts the commit limit and removes the expansion race; needed for the PRODUCTION runtime too, which passed its runs 0.5 GB under the ceiling",
+     "or reduce the carve (96 -> 80 GB): more visible RAM raises the automatic page file max and keeps the PLE table resident",
+     "or run ctx 131072 (-7 GB of commit)"
+    ],
+    "status": "waiting for the page file change; then re-run production_bench + multi-turn on bin/hip-rocm101-iq3s and promote ggml-hip.dll",
+    "ubatch_4096_option": {
+     "ctx 262144, ub 4096, batch 8192 (IQ3_S runtime)": "4/4 pass, 755-770 t/s on the 55K prefill; process commit peak 75.8-79.8 GB, system 116.4-117.3 GB (7 GB under the limit), dedicated VRAM peak 76.8 GB vs 85.2 at ub 8192",
+     "ub 4096 + batch 4096": "734.8 t/s - keep batch 8192",
+     "reading": "ub 8192 costs ~8 GB of VRAM (compute buffers, packed K/V copies, pool) and ~8% prefill is lost at 4096. IQ3_S at ub 8192 measured 819-831 t/s against production's 800-806 (+2.5%), and decode through the server is identical (23.87 vs 23.81 spec off; MMB never runs below LLAMA_MMB_MIN_T). So IQ3_S + ub 4096 (762) is slower than production today (806): the kernel only pays with the page file (or ctx 131072) keeping ub 8192."
+    }
+   }
+  }
+ },
+ "halogen_changelog_leads_20260917": {
+  "source": "https://github.com/peonist-ai/halogen-flash-server/blob/main/CHANGELOG.md",
+  "how_halogen_handles_UD_IQ4_XS_at_1400": "0.7.0 - it repacks EVERY tensor losslessly at load and never requantizes, covering IQ4_NL / IQ4_XS / IQ3_S / Q4_0 experts, Q8_0 trunk and Q6_K output, then caches the repack to disk (HALOGEN_GGUF_CACHE, 70 GiB, ~5 min; later starts 1.4 s warm / 16 s cold). The GEMM only ever sees one internal layout - the opposite of pwilkin's per-format dequant kernels. Reported within 1% of its own checkpoint on prefill and 0.7-2.1% BETTER on perplexity.",
+  "actionable": {
+   "expert_ordering_counting_sort": "0.5.3 - 'Expert ordering produced by general-purpose sort...counted out directly instead', worth +4.6% at 8k, +8.1% at 32k, +7.9% at 128k. Ours is mm_ids_route_sort in mmid.cu: a 1024-element BITONIC sort per chunk (55 stages, a __syncthreads each), run once per 1024 routes - 160 chunks for a 16384-token prefill at 10 used experts. A counting sort over the 512 experts replaces it with one histogram, a 512-wide scan and one scatter.",
+   "ple_gather_concurrency": "0.6.3 - reading the lookup table one row at a time (28 MB/s) cost 46-52 s on a 32k prompt; reading 64 rows at once (HALOGEN_NGRAM_GATHER_THREADS - threads, i.e. concurrency, not contiguity) cut it to 1.3 s. Our gather already uses 64 workers and now 16-deep overlapping, but theirs is ~3.6x faster per row (524288 rows in 1.3 s against our 262144 in 2.28 s).",
+   "prompt_lookup": "0.6.0 - n-gram speculation off the request's own context, +15% on coding-agent decode (49.1 -> 56.3 tok/s). manager.py already wires --spec-type ngram-mod but it has NEVER been measured on HIP.",
+   "indexer_budget": "0.9.1 - raising the sparse-attention budget 512 -> 4096 blocks buys retrieval 94/96 -> 95/96 for 4.5-6.7% prefill. We run LLAMA_QSA_QUERY_STRIP=512, i.e. already on the fast setting."
+  }
+ },
+ "expert_counting_sort_attempt_20260917": {
+  "lead": "halogen CHANGELOG 0.5.3 - expert ordering counted out directly instead of a general-purpose sort, reported +4.6% at 8k, +8.1% at 32k, +7.9% at 128k",
+  "ours": "mm_ids_route_sort in mmid.cu is a 1024-element bitonic sort per chunk (55 stages, a __syncthreads each), run for every 1024 routes - 160 chunks for a 16384-token prefill at 10 used experts",
+  "attempt": "replaced it with a counting sort: histogram into shared counts, a 512-wide ping-ponged inclusive scan, then a scatter through an atomic per-expert cursor. Same contract for mm_ids_route_scatter (keys contiguous per expert, starts[e] the run start, counts[e] its length).",
+  "result": {
+   "v1": "pp16384 904.26 +/- 4.61, tg128 24.71 +/- 0.51",
+   "v2_expert_ids_cached_in_lds": "pp16384 906.35 +/- 4.43, tg128 24.07 +/- 0.59",
+   "bitonic_baseline": "pp16384 946.06 +/- 4.52, tg128 25.26 +/- 0.22",
+   "verdict": "REGRESSION of about 4%. Reverted."
+  },
+  "why": "caching the expert ids in LDS (so global memory is read once rather than once per pass) bought only +2 t/s, so the cost is not the loads: it is the atomic cursor serialising threads that land on one expert, plus a 512-wide scan that costs more than the sort it replaces. The bitonic version runs entirely in LDS with no atomics, which suits 1024 elements. halogen's gain must come from their own ordering code, not this shape.",
+  "after_revert": "pp16384 947.37 +/- 2.17, tg128 24.97 +/- 0.44 - back to the bitonic number, perplexity 2.3786 throughout"
+ },
+ "ngram_speculation_on_hip_20260917": {
+  "lead": "halogen CHANGELOG 0.6.0 - prompt lookup off the request's own context, +15% on coding-agent turns (49.1 -> 56.3 tok/s). llama.cpp's equivalent is --spec-type ngram-mod, which manager.py has always wired from the profile's ngram_spec but which had never been measured on HIP.",
+  "method": "tools/coding_turn_test.py sends a ~90-line Python module and asks for one added method plus a full reproduction, so most of the answer is text already in the context; tools/multiturn_test.py covers prose. Same binary (IQ3_S kernel), same profile otherwise, MTP on throughout.",
+  "results": {
+   "coding_turn_ngram_off": "50.94 tok/s mean of 2 (draft acceptance 99%)",
+   "coding_turn_ngram_on": "64.77 tok/s mean of 2, second rep 68.76 (+27%)",
+   "prose_ngram_off": "25.3 / 30.4 tok/s",
+   "prose_ngram_on": "26.1 / 30.4 tok/s - unchanged, if anything slightly better",
+   "prefill": "unaffected: 1503 ms vs 1471 ms for the same 627-token prompt"
+  },
+  "verdict": "no trade-off, so ngram_spec now defaults to True in tools/manager.py and is saved into the profile. Beats the +15% halogen reported.",
+  "tool": "tools/coding_turn_test.py"
+ },
+ "unbuffered_sector_reads_20260917": {
+  "question": "a PLE row is 90 bytes and a 4 KiB page holds ~45 of them while we use one, so would FILE_FLAG_NO_BUFFERING with 512-byte sector reads cut the cost 8x?",
+  "tool": "tools/ssd_unbuffered_read.py (CreateFileW with FILE_FLAG_NO_BUFFERING | FILE_FLAG_RANDOM_ACCESS, sector-aligned buffers, server unloaded)",
+  "measured_peak_iops": {
+   "512B": "123679 at depth 64 (63.3 MB/s)",
+   "4096B": "110601 at depth 64 (453.0 MB/s)"
+  },
+  "verdict": "NO. 512-byte reads are only +12% in IOPS, not 8x. The drive is IOPS-limited, not bandwidth-limited: it serves ~110-124k operations per second whether each moves 512 B or 4 KiB. Smaller reads buy nothing, so the unbuffered sector-granularity plan is dead.",
+  "what_it_redirects_to": "the cost is the NUMBER of operations, and the way to cut that is cache hit rate. The page cache stores 4 KiB pages holding ~45 rows each, of which a random lookup uses one, so ~20 GB of free RAM caches only ~5M useful rows. A row-granular userspace cache at 90 bytes would hold ~222M rows in the same RAM - 44x - which against a 320M-row table is roughly a 69% hit rate instead of the 21% measured today, cutting disk operations ~2.5x and the gather from 2.28 s to about 0.9 s.",
+  "explains_halogen": "their 0.6.3 figure of 524288 rows in 1.3 s is 403k rows/s, well ABOVE this drive's ~124k IOPS ceiling, so most of their lookups must be cache hits - they run a smaller carve and have far more system RAM. It is not a faster drive."
+ },
+ "what_limits_decode_20260917": {
+  "question": "Task Manager shows the compute engine rising and falling but never saturating during decode",
+  "ruled_out": {
+   "ple_disk_io": "129 gathers of 0.80 ms = 103.4 ms of a 5.20 s tg128 run = 2.0%",
+   "kernel_launch_overhead": "HIP graphs work: LLAMA_GRAPH_TRACE reports the graph used on 253 of 256 calls (99%) with only 3 re-captures. GGML_HIP_GRAPHS is ON in the build and the MUL_MAT_ID needs-sync path never fires, so it never disables them.",
+   "memory_bandwidth": "~6B active params at 4.24 bpw is ~3.18 GB per token; 40.6 ms per token is ~78 GB/s against roughly 210-230 GB/s achievable - about 34%",
+   "compute": "batch-1 decode, nowhere near"
+  },
+  "what_is_left": "the node count itself. 7325 nodes per forward pass over 48 layers is ~153 per layer, i.e. ~5.5 us of GPU time per node at 40.6 ms per token. Even replayed from a graph at zero CPU cost, each is a kernel that must launch and drain on the GPU, and at batch 1 each does very little work - which is exactly a compute graph that rises and falls without filling.",
+  "node_census": {
+   "total": 7325,
+   "views_or_noops": 2727,
+   "per_layer": {
+    "ADD": 18.9,
+    "MUL_MAT": 16.1,
+    "MUL": 11.2,
+    "SCALE": 11.1,
+    "UNARY": 10.4,
+    "RMS_NORM": 4.8,
+    "CONT": 3.2,
+    "MUL_MAT_ID": 3.0,
+    "GET_ROWS": 2.6,
+    "REPEAT": 2.0,
+    "GLU": 2.0,
+    "CPY": 1.5,
+    "SUM_ROWS": 1.0,
+    "CLAMP": 1.0
+   },
+   "reading": "only 16.1 MUL_MAT and 3.0 MUL_MAT_ID per layer do real arithmetic; ADD/MUL/SCALE/UNARY together are 51.6 per layer of elementwise work that is pure overhead at batch 1. That is where fusion pays."
+  },
+  "lever": "operator fusion to cut the node count - the same thing journey steps 06-10 did (fused HC combine+norm, fused gate GEMM + stream mix, gated rms-norm, depthwise conv1d). A well-fused layer should be 20-40 nodes.",
+  "tool": "LLAMA_GRAPH_TRACE=1 on the HIP build prints graph usage, re-capture rate and a one-shot node census",
+  "CORRECTION": "the earlier entry read the graph's 7325 nodes as 7325 kernels. Instrumenting the dispatch loop shows 2331 actually dispatch per pass; 3853 are swallowed by existing fusions and 1141 are views/noops. So per-kernel time is 17.4 us, not 5.5, and weight traffic alone accounts for ~14.5 ms of the 40.6 ms step at best-case bandwidth. Kernel count is still the lever but the headroom is smaller than first stated. The MoE expert-sum ADD chain singled out as the fattest target is ALREADY fused by ggml_cuda_op_moe_weighted_reduction."
+ },
+ "mxfp4_on_gfx1151_20260917": {
+  "question": "a LocalLLaMA post reports Qwen3.8 27B NVFP4 at 5809 t/s prefill / 276 t/s decode on an AMD R9700 via an MXFP4 fast path - does that help us?",
+  "answer": "NO. The R9700 is RDNA4 (gfx1201); this machine is gfx1151, RDNA3.5. Probed by compiling the WMMA builtins with the SDK's own clang: on gfx1151 __builtin_amdgcn_wmma_f32_16x16x16_f16_w32 compiles (so the probe is sound) while the fp8 and fp4 variants do not exist. There is no hardware FP4 or FP8 matrix path on this chip.",
+  "consequence": "MXFP4 weights here would have to be dequantized to bf16 and fed through the same F16 WMMA that MMB already uses for IQ4_NL - the format itself buys nothing. MXFP4 is ~4.25 bpw against IQ4_NL's 4.5, so even the memory-traffic saving is marginal.",
+  "also_not_comparable": "that post runs a 27B model; ours is 177B. Its absolute numbers say nothing about this one."
+ },
+ "dispatched_kernel_census_20260917": {
+  "per_pass": {
+   "dispatched": 2331,
+   "fused_away": 3853,
+   "views_or_noops": 1141,
+   "graph_nodes": 7325
+  },
+  "by_op_per_layer": {
+   "MUL_MAT": 15.3,
+   "SCALE": 7.1,
+   "UNARY": 6.9,
+   "MUL": 3.0,
+   "RMS_NORM": 2.9,
+   "MUL_MAT_ID": 2.0,
+   "ADD": 1.9,
+   "GET_ROWS": 1.6,
+   "CONT": 1.2,
+   "SOFT_MAX": 1.0,
+   "GLU": 1.0,
+   "CONCAT": 0.8
+  },
+  "unary_breakdown_per_pass": {
+   "SIGMOID": 195,
+   "SILU": 98,
+   "SOFTPLUS": 36,
+   "ABS": 1,
+   "SGN": 1,
+   "TANH": 0
+  },
+  "reading": "SCALE + UNARY together are 671 kernels, 29% of all dispatches, against MUL_MAT's 736. They run on tensors as small as [4, 512].",
+  "tool": "LLAMA_GRAPH_TRACE=1 (counts, census, unary breakdown) and LLAMA_GRAPH_DUMP=<n> (op incl. unary subtype, name and shape for 220 nodes) via scripts/graph-probe.ps1"
+ },
+ "sigmoid_fusion_attempt_20260917": {
+  "finding": "upstream already fuses SCALE -> UNARY -> SCALE, but only for GGML_UNARY_OP_TANH (the Gemma softcap). This architecture dispatches 195 SIGMOID and ZERO TANH per pass, so that rule can never fire here. The graph dump confirms the shape is present: nodes 2039-2041 are SCALE / UNARY:SIGMOID / SCALE on ne=[4,512,1].",
+  "implemented": "ggml_cuda_op_scale_sigmoid in softcap.cu - one kernel for sigmoid(a*x + b0)*c + b1, covering both the triple and the bare scale+sigmoid pair, with a matching rule in ggml_cuda_can_fuse and dispatch in ggml_cuda_try_fuse.",
+  "result": "NOT EFFECTIVE YET: dispatches fell only 2331 -> 2329, so the rule fires once or twice instead of the ~48 expected. Quality is unaffected (PPL 2.3786, unchanged), so what does fire is correct, but the match is being rejected somewhere not yet identified. gatemix was ruled out - it covers the MUL_MAT[320->10240] + sigmoid + mix chain (nodes 2053-2055), not this one.",
+  "known_gap_in_my_predicate": "the new can_fuse block validates the caller's requested ops list but never asserts cgraph->nodes[node_idx]->op == GGML_OP_SCALE, so it should be tightened regardless of the match failure.",
+  "next": "instrument the predicate itself to count evaluations against returns, which will say whether it is reached and where it bails."
+ },
+ "production_state_20260917": {
+  "config": "bin/hip-rocm101 (f5daaa3 + IQ3_S MMB kernel + overlapped PLE reader), server at ctx 262144 / ub 8192 / FA on / QSA on / MTP on / ngram-mod on, GGML_HIP_ENABLE_UNIFIED_MEMORY=0",
+  "prefill": "793.7 t/s on a cold 55422-token prompt through the server",
+  "decode_fresh_slot": {
+   "coding_turn": "64.74 tok/s mean of 2 (61.20 then 68.29), draft acceptance 99%",
+   "prose": "27.9 then 32.4 tok/s"
+  },
+  "decode_after_a_55k_prefill": {
+   "coding_turn": "30.05 tok/s"
+  },
+  "context_depth_matters": "decode roughly halves between an empty slot and one holding 55k tokens - 64.74 vs 30.05 on the same request. Any single decode figure is meaningless without saying which.",
+  "llama_bench_for_reference": "pp16384 947.37 +/- 2.17, tg128 24.97 at ub 24576 with no speculation - not the production path and about 2.5x below it on decode",
+  "quality": "PPL 2.3786 +/- 0.04063 against the 2.3840 Vulkan baseline",
+  "gains_today": {
+   "prefill_llama_bench": "867.12 -> 947.37, +9.3%",
+   "coding_decode": "50.94 -> 64.74, +27%",
+   "all_quality_neutral": true,
+   "model_file_unchanged": true
+  },
+  "tool": "tools/production_bench.py"
+ },
+ "deep_context_truncation_regression_20260917": {
+  "reported": "a long structured answer cut off mid-list after 298 tokens at a 79189-token prompt; the server logged `truncated = 0`, so it was not a context overflow - the model stopped on its own",
+  "reproduced": "tools/truncation_test.py asks for 30 numbered sections with a 3000-token budget at temperature 0, optionally behind a --fill preamble",
+  "measurements": {
+   "shallow, current build": "1219 tokens, reached 30/30 - no problem",
+   "68499-token prompt, current build, ngram on": "530 tokens, reached 29/30, stopped on its own",
+   "68499-token prompt, current build, ngram off": "602 tokens, reached 29/30 - so n-gram is NOT the cause",
+   "68499-token prompt, pre-IQ3_S build (bin/hip-rocm101-overlapped), ngram off": "768 tokens, reached 30/30"
+  },
+  "cause": "the IQ3_S MMB kernel (and possibly the scale+sigmoid fusion built alongside it) degrades behaviour at depth. Temperature is 0, so each configuration is deterministic and the difference is attributable.",
+  "why_the_gate_missed_it": "scripts/hip-perplexity.ps1 runs at ctx 2048. PPL over 2048-token chunks was unchanged (2.3786 against the 2.3807 baseline) and cannot see a deep-context regression. The gap was noted when the kernel landed and never closed.",
+  "action": "production rolled back to bin/hip-rocm101-overlapped (f5daaa3 + the overlapped PLE reader, no IQ3_S). The IQ3_S build is kept at bin/hip-rocm101-current for investigation. Its +4.8% prefill / +5.5% decode is not worth a deep-context quality regression.",
+  "still_to_separate": "IQ3_S and the scale+sigmoid fusion shipped in the same binary; the fusion fires once or twice per pass and also changes numerics, so which of the two is responsible is unproven.",
+  "lesson": "any kernel touching numerics needs a DEEP-context check before it ships, not just a ctx 2048 perplexity run. tools/truncation_test.py --fill is that check.",
+  "superseded_by": "qsa_verification_leak_fix_20260918: the truncation was the speculative verification leak, present in every HIP build; the IQ3_S kernel was not shown to be at fault"
+ },
+ "qsa_verification_leak_fix_20260918": {
+  "what": "root cause of the MTP/n-gram 'answer stops mid-sentence' reports: speculative verification batches leaked their own draft tokens into the target through unmasked dense attention, once the context was long enough for QSA to be active (> indexer_top_k + r - 1 keys, ~2K tokens)",
+  "mechanism": [
+   "LLAMA_QSA_NO_DENSE_MASK=1 (the maskless trial) builds the QSA attention op with block indices and no kq_mask; only the qsa3 kernel (ggml-cuda/qsa.cu) applies the selection itself, and it declines q->ne[1] < 128",
+   "on HIP ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse() is CUDA-only and returns false, so every batch qsa3 declines ran the generic flash-attention kernels: dense attention over the whole cache with NO causal mask",
+   "single-token decode has nothing to leak; a 2-8 token verification batch lets the target's logits at token i see tokens i+1.. = the drafts they verify. Acceptance stops being a check, the text drifts toward the 4B MTP head, loops, and ends on <|im_end|>"
+  ],
+  "evidence": {
+   "ppl_ctx4096_6chunks_fa_on": {
+    "qsa3 kernel (production prefill, ubatch 512)": "2.4724 +/- 0.04325",
+    "dense attention, qsa off": "2.4761 +/- 0.04339 (so the qsa3 kernel itself is fine)",
+    "generic kernel, ubatch 512 (LLAMA_QSA_FA_V3=0)": "1.0841 +/- 0.00551 - impossible, future tokens visible",
+    "generic kernel, ubatch 4 (the verification shape)": "1.8397 +/- 0.02494",
+    "generic kernel, ubatch 4, FIXED": "2.4646 +/- 0.04292",
+    "generic kernel, ubatch 64, FIXED": "2.4628 +/- 0.04281",
+    "ctx 2048 (QSA inactive)": "2.3807 for every variant - the old quality gate could never see this"
+   },
+   "multiturn_6x1500_temp0": {
+    "before, MTP on": "turn 5 stops at 587 tokens and turn 6 at 440, both finish=stop mid-sentence, 4/4 runs",
+    "before, spec off": "6/6 turns reach the 1500 limit",
+    "after, MTP on": "6/6 reach the limit; turn 3 regenerated without speculation is byte-identical to the MTP turn 3 (1500 tokens at 3K context) - speculation is output-equivalent to greedy decoding again",
+    "after, spec off": "6/6, 24-25.7 tok/s, unchanged"
+   },
+   "probes": "tools/eos_probe.py at the recorded stop: P(<|im_end|>) 0.006-0.014 for prefill ubatch <= 127 (generic kernel, was leaking), 0.18-0.42 for >= 128 (qsa3, correct); the leaky path looked 'saner' because it cheated"
+  },
+  "fix": "patches/apply_qsa_small_batch_mask.py: src/models/qwen4exp.cpp keeps maskless only for n_tps >= 128 (mirrored in llm_graph_input_qsa::can_reuse), so batches the qsa3 kernel will not take carry the causal kq_mask again (a few MB). llama.dll only; rebuilt into bin/hip-rocm101 (pre-fix copy stays in bin/hip-rocm101-overlapped)",
+  "cost": "none measured: decode 28.9 tok/s MTP turn 1 (28.0 before), 24-25.7 spec off (25 before); prefill >= 128 tokens per ubatch takes the unchanged qsa3 path",
+  "still_open": [
+   "the generic path is still DENSE for every batch under 128 queries (indices ignored on HIP): correct but not sparse, so long-context decode pays full attention cost",
+   "at temperature 0 the model itself copies its previous answer verbatim when asked to continue (regen_turn.py proves the clean model does the same); users run with sampling",
+   "patches/iq3s-kernel was rolled back on a truncation test that had MTP on - re-evaluate it on the fixed runtime",
+   "bin/hip-rocm101-ckpt (FASTLLM_SPEC_NO_RS=1, full checkpoints instead of recurrent snapshots) hangs mid multi-turn; diagnostic only",
+   "the recurrent rollback snapshot mechanism was reviewed end to end and matches the CPU reference; it was never the problem"
+  ],
+  "tools": [
+   "tools/spec_ab.py",
+   "tools/spec_equivalence_test.py",
+   "tools/tie_probe.py",
+   "tools/eos_probe.py",
+   "tools/position_probe.py",
+   "tools/regen_turn.py",
+   "tools/multiturn_truncation_test.py --save",
+   "scripts/hip-perplexity.ps1 -FaV3/-FA/-Batch/-Ubatch/-Qsa"
+  ],
+  "notes": "logs/truncation-investigation-notes.md",
+  "user_scenario_after_fix": "the user's own 84K chat on the fixed runtime (logs/jan-managed-20260918-053413-e86608.log, MTP + n-gram on): 82155-token prompt at 715.5 t/s, 1872 generated tokens at 23.05 tok/s, draft acceptance 0.566, finished normally (truncated = 0) - the deep-context scenario of the original report"
+ },
+ "decode_ablation_20260918": {
+  "method": "FASTLLM_SKIP_OPS=<op classes> in the ggml-cuda dispatch loop replaces those nodes by a zero fill (garbage output, valid timing). bin/hip-rocm101-abl = production + that DLL. tools/decode_probe.py: 32-token prompt, 256 greedy tokens with EOS ignored, spec off, saved profile otherwise (ctx 262144, ub 8192).",
+  "ms_per_token": {
+   "base": 41.48,
+   "skip UNARY": 40.72,
+   "skip ADD": 40.45,
+   "skip SOFT_MAX": 40.63,
+   "skip GLU": 41.03,
+   "skip GET_ROWS,CONT,CPY,CONCAT": 38.72,
+   "skip MUL_MAT_ID (expert matvecs)": 33.01,
+   "skip MUL_MAT (dense matvecs: trunk + head)": 14.64,
+   "skip SCALE / MUL / RMS_NORM / GATED_DELTA_NET / SSM_CONV": "HTTP 500 (garbage breaks a downstream assumption); lists containing SCALE reported base time and are not trusted"
+  },
+  "reading": {
+   "dense_matvecs": "26.8 ms of 41.5 = 65%. They stream 5.3 GB per token (Q8_0 trunk 3.8 GB + head 1.2 GB + PLE etc.) = 198 GB/s, i.e. at the practical memory bandwidth of the machine. No kernel work recovers this; only fewer bytes (trunk precision) would.",
+   "expert_matvecs": "8.5 ms for 0.92 GB per token = 108 GB/s, about half the bandwidth the dense path reaches: ~4 ms recoverable in principle (MMVQ-id path, IQ3_S vec-dot with grid lookups suspected).",
+   "everything_else": "~6.2 ms for the other ~1,900 dispatches (elementwise, views, norms, GDN, conv): with HIP graph replay a small kernel costs ~3 us, not the 17 us assumed earlier. Fusing all of it away is worth at most ~5 ms (12%), not the 30% estimated before.",
+   "ceiling": "perfect experts (4.6 ms) + fused rest (~1.5 ms) + dense 26.8 = ~33 ms = 30 tok/s (+26%) at the current file. halogen's 44.8 tok/s prose is not reachable with an 8-bit trunk at 200 GB/s; its own changelog puts GGUF decode at 1.1-1.3x llama.cpp, i.e. the same ~27-31 range."
+  },
+  "next": "measure the same three ablations on the all-IQ4_NL requant (D:/models/requant) to see whether the IQ3_S vec-dot is the expert-path inefficiency; then expert kernel and/or a lossless 4-bit IQ3_S transcode, then elementwise/view fusion; trunk precision is a model-file decision for the user.",
+  "all_iq4_nl_requant_same_probe": {
+   "base": 33.39,
+   "skip MUL_MAT_ID": 26.13,
+   "skip MUL_MAT": 14.95,
+   "reading": "dense matvecs 18.4 ms (vs 26.8 with the Q8_0 trunk: -8.4 ms, +25% decode, bytes 5.3 -> ~2.8 GB, running at ~150 GB/s), expert matvecs 7.3 ms (vs 8.5 with IQ3_S experts despite 30% MORE bytes: the IQ3_S vec-dot runs at ~108 GB/s against ~164 for IQ4_NL), rest ~7.7 ms. The trunk precision is the single largest decode lever on this machine; it is a model-file (quality) decision, not a kernel one."
+  }
+ },
+ "decode_levers_20260918": {
+  "what": "the three decode items approved after the ablation: elementwise chain fusion, IQ3_S vec-dot HIP branch, trunk precision variant files. Spec off, saved profile otherwise (ctx 262144, ub 8192), production = bin/hip-rocm101 with the IQ3_S MMB DLL live.",
+  "chain_fusion": {
+   "patch": "patches/apply_chain_fusion.py + patches/chain-fusion/ (fastllm-chain.cu/.cuh), staged as bin/hip-rocm101-chain",
+   "correctness": "FASTLLM_CHAIN_VERIFY=1 self-check (node-by-node recompute vs fused, operands snapshotted/restored, streams synchronised): 0 mismatching chains over a 32-token prefill + 8 decode tokens; 600 greedy tokens byte-identical to the unfused runtime; PPL ctx 2048 = 2.3786 (same as production)",
+   "bug_found": "folding a REPEAT that ran before the chain into a read of its source is a use-after-free in ggml-alloc terms (the PLE value repeat): the source's lifetime ends at the REPEAT node. Only REPEATs inside the chain are folded now.",
+   "decode_probe_ms_per_token": {
+    "round1_production": [
+     40.99,
+     40.04,
+     41.81,
+     41.2
+    ],
+    "round1_chain": [
+     40.79,
+     39.28,
+     40.12,
+     39.39
+    ],
+    "round2_production": [
+     39.67,
+     38.91,
+     39.93,
+     38.62
+    ],
+    "round2_chain": [
+     40.19,
+     39.22,
+     39.78,
+     39.01
+    ],
+    "reading": "<= 1 ms/token, inside the probe's run-to-run drift; see llama_bench_tg128 below"
+   },
+   "prefill_55422_tok_s": {
+    "production": [
+     959.6,
+     975.6,
+     941.9,
+     945.9
+    ],
+    "chain_unbounded": [
+     928.5,
+     936.0,
+     927.8,
+     952.7
+    ],
+    "chain_bounded_262144_elems": [
+     936.6,
+     940.2
+    ],
+    "reading": "the generic modulo-broadcast kernel loses to the specialised binary kernels on multi-million-element tensors; FASTLLM_CHAIN_MAX_ELEMS=262144 (default) keeps it to the launch-bound regime and makes prefill neutral"
+   },
+   "dispatch_census_2_token_graph": "2125 dispatched per pass (772 MUL_MAT, 339 SCALE, 231 UNARY, 137 RMS_NORM, 96 MUL_MAT_ID, 77 GET_ROWS, 60 MUL, 58 CONT, 48 SOFT_MAX), 4261 nodes swallowed by all fusions, 1213 views. The SCALE/UNARY that remain sit next to mat-muls or softmax and are not chainable.",
+   "note": "bin/hip-rocm101-chain is the tree build and therefore also contains the vec-dot branch; bin/hip-rocm101-vd is vec-dot only"
+  },
+  "iq3s_vecdot_hip_branch": {
+   "what": "vecdotq.cuh vec_dot_iq3_s_q8_1: sign application via a 16-entry byte-mask table and two dp4a per 8 weights instead of __vcmpne4/__vsub4 (bit-exact, equivalence IDENTICAL); staged as bin/hip-rocm101-vd",
+   "decode_probe_ms_per_token": {
+    "vd": [
+     39.35,
+     38.42,
+     39.04,
+     38.56
+    ],
+    "production_interleaved": [
+     42.03,
+     40.58,
+     40.65,
+     39.67
+    ],
+    "earlier_under_cpu_contention": {
+     "vd": 44.41,
+     "production": 41.48
+    }
+   },
+   "llama_bench_tg128": "see below"
+  },
+  "trunk_precision_variants": {
+   "files": {
+    "trunk-q6k": "D:/models/requant/Qwen3.8-Flash-Next-UD-IQ4_XS-trunk-q6k.gguf (92,911,998,336 B; the 496 Q8_0 trunk tensors -> Q6_K, experts/embeddings untouched)",
+    "trunk-iq4nl": "D:/models/requant/Qwen3.8-Flash-Next-UD-IQ4_XS-trunk-iq4nl.gguf (91,893,451,136 B; same set -> IQ4_NL)"
+   },
+   "how": "scripts/requant-trunk.ps1: llama-quantize --allow-requantize --tensor-type-file pins every other 2-D tensor to its current type (920 lines), so only the trunk is re-quantized",
+   "ppl": {
+    "base_ctx2048": 2.3786,
+    "base_ctx4096": 2.4724,
+    "trunk-q6k": {
+     "ctx2048": 2.3867,
+     "ctx4096": 2.465,
+     "note": "first ctx-4096 attempt hit a device OOM immediately after the ctx-2048 run (transient), rerun clean"
+    },
+    "trunk-iq4nl": {
+     "ctx2048": 2.6591,
+     "ctx4096": 2.7092
+    }
+   },
+   "speed_production_runtime": {
+    "base": {
+     "prefill_55422": "941.9-975.6",
+     "decode_ms": "38.6-41.8"
+    },
+    "trunk-q6k": {
+     "prefill_55422": 887.1,
+     "decode_ms": [
+      36.46,
+      35.77
+     ]
+    },
+    "trunk-iq4nl": {
+     "prefill_55422": 980.1,
+     "decode_ms": [
+      31.36,
+      30.71
+     ]
+    }
+   },
+   "verdict": "IQ4_NL trunk: +10-12% PPL, rejected (double quantization of an 8-bit trunk to 4.5 bpw). Q6_K trunk: PPL neutral at both gates (+0.3% / -0.3%), decode -9% (about +2.5 tok/s), prefill -6% (Q6_K dequant is slower than Q8_0 in the MMB path). A real trade-off, the user's call; the file is not wired into the manager."
+  },
+  "llama_bench_tg128_x5_unified_off": {
+   "production": [
+    24.6,
+    24.9
+   ],
+   "chain_runtime (chain fusion + vec-dot branch)": [
+    24.97,
+    25.27
+   ],
+   "vec-dot branch only": [
+    25.1,
+    25.41
+   ],
+   "reading": "the vec-dot branch is +2% and separable; the chain fusion adds nothing measurable on top of it (bench and probe both inside drift). Both are bit-exact. The tree build (both) is what gets promoted."
+  },
+  "promoted": "2026-09-18 13:18: the tree build of ggml-hip.dll (chain fusion + IQ3_S vec-dot branch, on top of the IQ3_S MMB kernel) copied into bin/hip-rocm101 after the six-turn MTP+n-gram test ran 6/6 to the limit at 25.9-29.9 tok/s on it; previous production DLL kept as bin/hip-rocm101-iq3s/ggml-hip.dll.pre-chain-backup. Managed server restarted on the saved profile."
+ },
+ "trunk_decode_twins_20260918": {
+  "what": "runtime switch (profile trunk_decode_q6k -> LLAMA_TRUNK_DECODE_Q6K=1; patches/apply_trunk_decode_twins.py): after load, every 2-D Q8_0 weight except token_embd gets a Q6_K copy in its own device buffer, made with ggml_quantize_chunk; build_lora_mm reads the copy for batches of <= LLAMA_TRUNK_DECODE_MAX_T (8) tokens, the Q8_0 original otherwise. Originals untouched, pointers unchanged.",
+  "equivalence": "PPL ctx 4096 ub 512 with the copies forced onto every batch (MAX_T=512) = 2.4650 +/- 0.04286, exactly the trunk-q6k requant file's number: the in-memory quantization is byte-identical to llama-quantize's",
+  "quality_default_bound": "PPL ctx 4096 ub 4 (decode-shaped batches on Q6_K) = 2.4569 vs 2.4646 for Q8_0 at the same shape",
+  "decode_probe_ms_per_token_same_runtime": {
+   "twins_on": [
+    36.56,
+    35.85,
+    36.69,
+    35.76
+   ],
+   "twins_off": [
+    39.17,
+    38.44,
+    39.13,
+    38.48
+   ],
+   "reading": "-7% per token, the same gain as the requant file, with prefill numerics unchanged"
+  },
+  "blocker_at_production_settings": "the copies are 2.9 GB of device memory, charged 1:1 to the Windows commit limit like every HIP allocation. At ctx 262144 / ub 8192 with MTP + n-gram the process already peaks at ~91.5 GB commit against a ~124 GB system limit shared with everything else; with the copies the 55K prefill probe dropped to 815.8 t/s and the six-turn MTP test died at turn 2 with `got exception: bad allocation` followed by GGML_ASSERT(batch.slot_batched || batch.size() == 0) in server-context.cpp. Same failure class as the IQ3_S deep-prefill 500s, brought forward by 2.9 GB. It fits where ~3 GB of headroom exists (ctx <= 131072 measured 84 GB peak).",
+  "shipped": "llama.dll with the code promoted into bin/hip-rocm101 (inert unless the switch is on); saved profile keeps trunk_decode_q6k=false; Jan page switch added in integrations/jan (needs a Jan rebuild with Jan closed). Previous llama.dll at bin/hip-rocm101-iq3s/llama.dll.pre-twins-backup.",
+  "better_path": "mmb.cu serves Q6_K only through a persistent BF16 shadow (LLAMA_MMB_SHADOW mode 2, capped); a whole Q6_K trunk exceeds the cap and falls back to stock MMQ, which is the -6% prefill of the requant file. A native Q6_K dequant path in the MMB kernel (same shape of work as the IQ3_S one) would let a single in-place Q6_K trunk keep prefill AND take the decode gain at -0.9 GB instead of +2.9 GB."
+ },
+ "decode_vs_context_20260918": {
+  "tool": "tools/decode_vs_context.py: growing prefixes of one random-word document with cache_prompt on, 64 greedy tokens per depth, spec off, production runtime",
+  "production_ms_per_token": {
+   "2329": 40.85,
+   "16225": 45.06,
+   "32530": 47.37,
+   "65037": 58.03,
+   "97512": 64.4,
+   "slope_ms_per_1k_ctx": 0.247
+  },
+  "attention_op_zero_filled_ms_per_token": {
+   "2329": 42.92,
+   "16225": 45.25,
+   "32530": 45.33,
+   "65037": 49.37,
+   "97512": 54.2,
+   "slope_ms_per_1k_ctx": 0.118
+  },
+  "reading": "decode is NOT context-independent on HIP: +23.5 ms from 2K to 97K. About half (0.13 ms per 1K tokens, ~12 ms at 97K) is the attention op itself: on HIP the sparse indices are honoured only by the qsa3 kernel (>= 128 queries), so a 1-token batch runs the generic kernel over the whole 12-layer f16 cache (24 KB per context token: 12 attention layers x 2 KV heads x 256 x K+V x f16 = 2.3 GB at 97K). The other half (0.118 ms per 1K, ~11 ms at 97K) is the selection path that also scans the cache: indexer scores, relu-sum, top-k, score bounds and mask work. By design (top_k 2048 blocks) both should be flat; the fix is a decode-side sparse path on HIP (gather the selected blocks, ~50 MB, then attend) and a profile of the selection ops at depth."
+ },
+ "carve_64gb_20260918": {
+  "change": "BIOS UMA carve 96 -> 64 GB and power mode 120 -> 140 W, to escape the Windows commit ceiling. Visible RAM 63.6 GB, commit limit 159.6 GB (was ~124), page file 96 GB.",
+  "verdict": "WORSE on both axes; recommend going back to 96 GB. The carve is too small for this model: dedicated 63.59 GB is full AND 9.77 GB still spills into shared memory even with GGML_HIP_ENABLE_UNIFIED_MEMORY=0, and the copy engine runs at 2-6% during pure decode (driver paging).",
+  "prefill_55422_tok_s": {
+   "96GB_carve": [
+    941.9,
+    945.9,
+    959.6,
+    975.6
+   ],
+   "64GB_ub8192": 839.2,
+   "64GB_ub8192_unified_on": 839.3,
+   "64GB_ub4096": 769.2,
+   "64GB_ub4096_twins": 746.7
+  },
+  "decode_ms_per_token": {
+   "96GB_carve": [
+    38.6,
+    38.9,
+    39.7,
+    39.9
+   ],
+   "64GB_ub8192": [
+    49.84,
+    49.96
+   ],
+   "64GB_ub8192_unified_on": [
+    49.19,
+    48.29
+   ],
+   "64GB_ub4096": [
+    50.74,
+    49.22
+   ],
+   "64GB_ub4096_twins": [
+    51.89,
+    50.83
+   ]
+  },
+  "multi_turn_mtp_ngram": "6/6 turns complete at ub 4096 with the Q6_K twins on, but 17.2-19.3 tok/s against 25.9-30.7 at the 96 GB carve",
+  "notes": [
+   "the unified-memory switch no longer changes anything (839.2 vs 839.3): it prevents a spill only when the carve has room, and at 64 GB it does not",
+   "the Q6_K decode twins now fit (no bad allocation) but cost speed here (746.7 prefill, 50.8-51.9 ms decode) because they add 2.9 GB to an already spilling carve",
+   "+140 W did not offset the carve: every 64 GB number is worse than every 96 GB number"
+  ]
+ },
+ "decode_concurrency_20260918": {
+  "method": "tools/decode_concurrency.py, server started with -np 4, spec off, 128 tokens per stream, 64 GB carve",
+  "results": {
+   "1 stream": {
+    "ms_per_token": 50.17,
+    "aggregate_tok_s": 19.04
+   },
+   "2 streams": {
+    "ms_per_token": 61.22,
+    "aggregate_tok_s": 30.64
+   },
+   "4 streams": {
+    "ms_per_token": 79.28,
+    "aggregate_tok_s": 47.14
+   }
+  },
+  "reading": "4x the work costs only 1.58x the time per step: the weight bytes are read once per batch no matter how many sequences share it, which is the same lever speculation uses. Single-stream decode leaves roughly 2.5x of the machine unused; Task Manager's 75% compute during decode is memory stall plus the host-side per-token gap (sampling, PLE gather, graph launch), not a compute limit. Concurrency and speculation are the only ways a bandwidth-bound decode gets faster; -np is currently pinned to 1 in manager.py argv."
+ },
+ "parallel_slots_20260918": {
+  "change": "manager.py: profile field parallel (default 4, bounds 1-8) -> -np N, plus -kvu when N > 1 so the KV pool is shared and each slot still sees the full 262144 context (without -kvu llama.cpp splits it: n_ctx_slot = 65536 at -np 4). Server log confirms n_slots = 4, n_ctx_slot = 262144, kv_unified = 'true'. Jan page gets a numeric field.",
+  "matrix_64gb_carve": {
+   "np1": {
+    "prefill": 838.5,
+    "decode_ms": 49.19,
+    "mtp_turns_tok_s": [
+     20.5,
+     20.0
+    ],
+    "n_ctx_slot": 262144
+   },
+   "np4_kvu": {
+    "prefill": 806.2,
+    "decode_ms": 48.99,
+    "mtp_turns_tok_s": [
+     20.3,
+     19.5
+    ],
+    "n_ctx_slot": 262144
+   },
+   "np4_no_kvu": {
+    "prefill": 862.2,
+    "decode_ms": 47.31,
+    "mtp_turns_tok_s": [
+     21.0,
+     20.0
+    ],
+    "n_ctx_slot": 65536
+   },
+   "np2_kvu": {
+    "prefill": 786.3,
+    "decode_ms": 48.26,
+    "mtp_turns_tok_s": [
+     20.6,
+     19.9
+    ],
+    "n_ctx_slot": 262144
+   }
+  },
+  "reading": "slots cost nothing on decode or on the MTP multi-turn path; the shared pool (-kvu) costs 4-6% prefill, and a split pool is even slightly faster than np1 because its per-slot mask/pool is a quarter of the size. The 15 tok/s seen on the first np4 multi-turn was the thermal state right after the four-stream burst, not the slots. Concurrency: 1/2/4 streams 18.9/30.5/46.6 tok/s aggregate on the four-slot managed server, same as the direct-launch test."
+ },
+ "qsa3_small_batch_force_20260918": {
+  "what": "QSA3_FORCE=1 lifts the qsa3 kernel's q->ne[1] < 128 gate (qsa.cu:402)",
+  "result": "a null test: PPL ub4 2.4646 (= baseline), 600 tokens IDENTICAL, decode-vs-context slope 0.316 vs 0.319 ms per 1K - because the kernel also needs the packed key/value operands (src[6]/src[7]) and qwen4exp.cpp builds those only under layout_prefill = n_tps >= 128 (qsa_pack_keys/qsa_pack_values repack the whole cache per graph). At decode they are null, the predicate fails, and the dense path runs as before.",
+  "implication": "a small-batch sparse path is real work, not a gate flip: either a persistent packed K/V cache maintained incrementally (like the GDN write-through), or a decode-side gather of the selected blocks from the raw cache (get_rows on a [1024, n_kv/4, n_head_kv] block view per query + a tiny position mask) feeding the standard flash-attention kernel with the queries as the batch dimension (~16 MB per layer per token instead of the whole cache)."
+ },
+ "decode_depth_ablation_20260918": {
+  "method": "tools/decode_vs_context.py --words 700,28800 --n 64 (2.3K and 97.5K context), spec off, 64 GB carve (absolute numbers slow, slopes valid), FASTLLM_SKIP_OPS zero-fills one op class per run",
+  "slope_ms_per_1k_ctx": {
+   "none": 0.308,
+   "LIGHTNING_INDEXER": 0.309,
+   "TOP_K": 0.308,
+   "ARGSORT": 0.322,
+   "SOFT_MAX": 0.324,
+   "CPY,CONT": 0.344,
+   "FLASH_ATTN_EXT": 0.154,
+   "FLASH_ATTN_EXT+INDEXER+TOP_K+ARGSORT": 0.154,
+   "GET_ROWS": "invalid (7.6 s/token: zeroed row indices break the graph)"
+  },
+  "reading": "the attention op is exactly half of the context slope (0.308 -> 0.154); none of the selection ops (indexer, top-k, argsort, softmax) or the copies carry the other half. The remaining 0.154 ms per 1K tokens (~15 ms at 97K) is in something the class ablation cannot isolate - candidates: the indexer-score MUL_MAT over all cached index keys (a skinny GEMV whose kernel may run far below bandwidth), or host-side per-token work proportional to n_kv. FASTLLM_NODE_TIMING (per-dispatch stream events, bin/hip-rocm101-timing) is the tool for the rest."
+ },
+ "decode_node_timing_97k_20260918": {
+  "tool": "FASTLLM_NODE_TIMING=1 (+ GGML_CUDA_DISABLE_GRAPHS=1) in ggml-cuda.cu: stream events around every dispatch, per-kind totals printed after each graph; bin/hip-rocm101-timing",
+  "decode_graph_gpu_ms": {
+   "2K": 83.4,
+   "97K": 108.6
+  },
+  "97K_only_or_grown_kinds_ms": {
+   "FLASH_ATTN_EXT x12 [256,24,1,1]": 15.6,
+   "ROPE x12 [128,1,24384,1]": 4.26,
+   "GET_ROWS x12 [128,97536,1,1]": 2.59,
+   "RMS_NORM x12 [128,24384,1,1]": 1.96,
+   "MUL_MAT x12 [12288,1,1,1] (indexer/attn projections, grew from 2.15)": 3.0
+  },
+  "reading": "the second half of the context slope is the indexer block-key rebuild: every graph gathers ALL cached raw indexer keys (GET_ROWS over 97536 rows), mean-pools them into 24384 blocks, rms-norms and ropes every block - per decoded token. That is O(context) work whose inputs never change for a completed block. Fix: cache the finished block keys (patches/apply_qsa_block_key_cache.py, bin/hip-rocm101-kb) and build only the blocks a ubatch completes. The other half (FLASH_ATTN_EXT running dense) needs the decode-side sparse path."
+ },
+ "user_84k_matrix_20260918": {
+  "what": "the user's own 82155-token prompt run end to end on the production server (spec off, ctx 262144, ub 8192), carve x trunk-precision matrix",
+  "runs": {
+   "64GB_stock": {
+    "prefill_t_s": 752.63,
+    "decode_ms": 82.08,
+    "decode_tok_s": 12.18
+   },
+   "64GB_q6k": {
+    "prefill_t_s": 703.92,
+    "decode_ms": 82.08,
+    "decode_tok_s": 12.18
+   },
+   "96GB_stock": {
+    "prefill_t_s": 853.99,
+    "decode_ms": 58.49,
+    "decode_tok_s": 17.1
+   },
+   "96GB_q6k": {
+    "prefill_t_s": 856.74,
+    "decode_ms": 56.12,
+    "decode_tok_s": 17.82
+   }
+  },
+  "reading": [
+   "the 96 GB carve is worth +13% prefill and +40% decode on a real 84K workload; 64 GB is not a viable carve for this model",
+   "the Q6_K decode twins are FREE on prefill at 96 GB (856.7 vs 854.0) and worth -4% decode ms (56.12 vs 58.49). At 64 GB they cost 7% prefill (703.9 vs 752.6) because the 2.9 GB lands in an already spilling carve. Enable the switch only where the carve has room.",
+   "decode at 84K is 58.5 ms against 39 ms at 2K on the same build: the context slope dominates a long chat, which is what the block-key cache and a decode-side sparse attention path are for"
+  ],
+  "user_observation": "parallel > 1 makes the server use shared GPU memory; parallel = 1 does not. Reproduced by the user across restarts; the cause is not yet identified (KV and recurrent state are the same size either way under -kvu)."
+ },
+ "qsa_block_key_cache_20260918": {
+  "patch": "patches/apply_qsa_block_key_cache.py (llama-memory-hybrid-idx.{h,cpp} + models/qwen4exp.cpp); LLAMA_QSA_BLOCK_KEY_CACHE=0 disables",
+  "what": "a finished QSA block's indexer key depends only on its member cells and its position, so it is built once, when a write completes the block, into one F16 row per indexer cell (plus a scratch row) and read back afterwards. Before it, every graph rebuilt every block key from the whole cache: gather all raw keys, mean-pool into n_kv/4 blocks, rms-norm and rope them, per decoded token.",
+  "cost": "one F16 [128, kv_size+1] tensor per indexer layer = 12 x 64 MiB at ctx 262144",
+  "quality": {
+   "ppl_ctx4096_ub4": 2.4646,
+   "ppl_ctx4096_ub512": 2.4741,
+   "note": "both identical to production; 600 greedy tokens byte-identical; 6/6 multi-turn with MTP + n-gram at 28.4-31.6 tok/s"
+  },
+  "decode_ms_per_token_96gb_carve": {
+   "context": [
+    2329,
+    16225,
+    32530,
+    65037,
+    97512
+   ],
+   "cache_on": [
+    41.16,
+    42.71,
+    45.42,
+    51.3,
+    58.45
+   ],
+   "cache_off": [
+    40.57,
+    43.62,
+    49.7,
+    55.75,
+    63.54
+   ],
+   "slope_ms_per_1k": {
+    "on": 0.182,
+    "off": 0.241
+   }
+  },
+  "reading": "at 97K the cache is worth 5.1 ms/token (+8.7%: 17.11 vs 15.74 tok/s) and cuts the context slope by a quarter. Short context is unchanged (the first graph after any position move still rebuilds everything). Prefill 950.7 t/s and batch-1 decode 38.88 ms are both at production level.",
+  "bug_that_cost_the_evening": "an incremental graph reads no blk_cells / blk_pos (its keys come from the dirty list), so ggml never allocates them - but set_input_qsa_impl still filled them, writing through a null data pointer. It died as an access violation inside VCRUNTIME's memset with no message; the Windows Application Error log named the faulting module and settled it after four wrong hypotheses. Rule: any graph input that some graph variant stops reading must be treated as optional in set_input."
+ },
+ "qsa_decode_gather_20260918": {
+  "patch": "patches/apply_qsa_decode_gather.py (models/qwen4exp.cpp); LLAMA_QSA_DECODE_GATHER=1 enables, set with the other QSA gates by manager.py; LLAMA_QSA_DECODE_GATHER_MAX_T caps the batch size (default 8)",
+  "what": "decode-sized batches gather the ~2051 selected cells out of the K/V caches into a compact pair, pad to a multiple of FATTN_KQ_STRIDE, mark -1 entries and the padding with a -inf mask, and run the ordinary flash-attention kernel over 2304 keys instead of the whole cache. No packed layout and no extra memory, unlike feeding the qsa3 kernel.",
+  "why_not_qsa3": "QSA3_FORCE=1 lifts the kernel's q->ne[1] < 128 gate but the packed K/V operands (src[6]/src[7]) are only built under layout_prefill (n_tps >= 128), so the predicate still declines: measured as a null test (PPL, token equivalence and the context slope all unchanged). Giving the kernel those operands at decode would mean maintaining a packed copy of the whole cache, +6.4 GB at ctx 262144.",
+  "numerics": "decode becomes sparse, matching the model's design and what prefill already does; NOT bit-identical to the dense decode it replaces",
+  "quality": {
+   "ppl_ctx8192_ub4_gather_on": 1.9867,
+   "ppl_ctx8192_ub4_gather_off": 1.9909,
+   "ppl_ctx4096_ub4_gather_on": 2.4639,
+   "ppl_ctx4096_ub4_dense": 2.4646,
+   "ppl_ctx4096_ub512": 2.4741,
+   "note": "prefill untouched; six-turn MTP + n-gram 6/6 at 28.4-30.1 tok/s"
+  },
+  "decode_ms_per_token_96gb_carve": {
+   "context": [
+    2329,
+    16225,
+    32530,
+    65037,
+    97512
+   ],
+   "gather_on": [
+    40.46,
+    42.84,
+    42.91,
+    44.94,
+    47.91
+   ],
+   "gather_off": [
+    41.07,
+    43.63,
+    46.74,
+    52.7,
+    58.95
+   ],
+   "slope_ms_per_1k": {
+    "on": 0.078,
+    "off": 0.188
+   }
+  },
+  "gate": "the cache must be at least twice the padded selection: gathering 2304 of 2329 cells measured slower than reading them in place (42.9 vs 41.1 ms at 2.3K)",
+  "combined_with_block_key_cache": "97K decode went 63.54 -> 47.91 ms/token today (15.74 -> 20.87 tok/s, +33%), and the context slope 0.241 -> 0.078 ms per 1000 tokens. Prefill 963.7 t/s and batch-1 decode 38.45 ms are at production level."
+ }
+}

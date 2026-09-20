@@ -44,8 +44,9 @@ page file than by shrinking the carve back.
 python bootstrap/bootstrap.py --toolchain
 ```
 
-This creates `toolchain/rocm-venv`, installs the ROCm SDK into it as wheels, and downloads ninja.
-About 5 GB.
+This creates `toolchain/rocm-venv`, installs the ROCm SDK into it as wheels, expands the devel SDK
+(`rocm-sdk init` — the wheel is a tarball until then, and a bootstrap that skipped this had no
+compiler and no device bitcode), and downloads ninja. About 5 GB.
 
 **Use TheRock ROCm 10.1, not the system ROCm 7.1.** Same source, same flags: 458 → 735 t/s, +60%.
 This is the single largest factor in the prefill numbers and it is not a code change. Windows wheels

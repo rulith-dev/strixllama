@@ -526,7 +526,11 @@ def process_identity(pid, terminate=False, expected=None):
         birth = times[0].dwHighDateTime << 32 | times[0].dwLowDateTime
         result = {'pid':int(pid), 'exe':str(Path(buf.value).resolve()), 'birth':birth}
         if terminate:
-            if result != expected or not managed_runtime(result['exe']): raise ValueError('进程身份已变化，拒绝卸载')
+            # the identity (pid, executable, birth time) is what was adopted or started; that it
+            # matches, and that it is a llama-server at all, is the check - so a server another
+            # copy of this manager started can be unloaded too, and nothing else ever is
+            if result != expected or Path(result['exe']).name.lower() != 'llama-server.exe':
+                raise ValueError('进程身份已变化，拒绝卸载')
             if not k.TerminateProcess(handle,0): raise OSError('无法停止模型进程')
             k.WaitForSingleObject(handle,10000)
         return result
@@ -554,10 +558,15 @@ def state():
                  profile=saved.get('profile'), unified=bool(saved.get('unified')), log=saved['log'])}
         atomic_json(DATA / 'process.json', saved)
         return saved
-    # Adopt only the exact project binary with the configured local endpoint.
+    # Adopt a server of ours on the configured local endpoint: the exact project binary, or a
+    # llama-server on our port started with our launch flags by another copy of this manager (an
+    # earlier install, a checkout in another directory). Without the second case a model loaded
+    # from one copy could not be unloaded from the next, and its port stayed taken.
     for p in discover():
         cmd = p.get('CommandLine') or ''
-        if managed_runtime(p.get('ExecutablePath')) and re.search(r'--port\s+8080(?:\s|$)', cmd) and re.search(r'--host\s+127\.0\.0\.1(?:\s|$)', cmd):
+        ours = managed_runtime(p.get('ExecutablePath')) or (
+            Path(p.get('ExecutablePath') or '').name.lower() == 'llama-server.exe' and '--lazy-mode on-direct' in cmd)
+        if ours and re.search(r'--port\s+8080(?:\s|$)', cmd) and re.search(r'--host\s+127\.0\.0\.1(?:\s|$)', cmd):
             model_match = re.search(r'(?:^|\s)-m\s+(?:"([^"]+)"|(\S+))', cmd)
             log_match = re.search(r'--log-file\s+(?:"([^"]+)"|(\S+))', cmd)
             identity = process_identity(p['ProcessId'])

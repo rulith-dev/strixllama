@@ -281,6 +281,19 @@ class ManagerTests(unittest.TestCase):
             # a binary at the right path proves nothing about the gates it was started with
             self.assertNotIn('runtime_env',status)
         self.assertFalse(m.managed_runtime(self.root/'some-other-build'/'llama-server.exe'))
+    def test_a_server_from_another_copy_of_the_manager_is_adopted_and_can_be_unloaded(self):
+        # an earlier install's runtime, on our port, started with our flags - not the pinned binary
+        other=str((self.root/'elsewhere'/'hip-rocm101'/'llama-server.exe').resolve())
+        ident={'pid':321,'exe':other,'birth':7}
+        entry={'ProcessId':321,'ExecutablePath':other,'CommandLine':'llama-server.exe -m x.gguf --host 127.0.0.1 --port 8080 --load-mode none --lazy-mode on-direct'}
+        with patch.object(m,'discover',return_value=[entry]),patch.object(m,'process_identity',return_value=ident) as identity:
+            self.assertEqual(m.state()['identity'],ident)
+            m.handle('stop',{});identity.assert_called_with(321,True,ident)
+        # but not an unrelated llama-server that merely sits on the port
+        entry['CommandLine']='llama-server.exe -m x.gguf --host 127.0.0.1 --port 8080'
+        m.atomic_json(m.DATA/'process.json',{})
+        with patch.object(m,'discover',return_value=[entry]),patch.object(m,'process_identity',return_value=ident):
+            self.assertNotIn('identity',m.state())
     def test_candidate_can_be_adopted_and_stopped_by_exact_identity(self):
         ident={'pid':123,'exe':str(m.RUNTIME.resolve()),'birth':456}
         entry={'ProcessId':123,'ExecutablePath':ident['exe'],'CommandLine':'llama-server.exe --host 127.0.0.1 --port 8080'}

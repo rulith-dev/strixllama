@@ -256,6 +256,12 @@ def toolchain():
         print("\nRe-run with --rocm-version <one of those>. Anything other than %s is UNTESTED here:" % ROCM_VERSION)
         print("re-measure before trusting it - see docs/install.md and docs/measuring.md.")
         return 1
+    # The devel wheel is a tarball plus a CLI: nothing under _rocm_sdk_devel/ exists until
+    # `rocm-sdk init` expands it and links the gfx1151 device files in. pip alone leaves the
+    # compiler, headers and device bitcode missing, which is exactly how a first bootstrap of
+    # this repository on a clean tree failed.
+    if not os.path.isdir(os.path.join(rocm_root(), "bin")):
+        run([py, "-m", "rocm_sdk", "init"], label="rocm-sdk init")
     if not os.path.isfile(os.path.join(ROOT, "toolchain", "ninja.exe")):
         import io as _io
         import urllib.request
