@@ -24,7 +24,13 @@
 之上分辨的，就直接写明分辨不出，而不是算作收益；解码数字一律带上草稿接受率——开着推测解码时，脱离
 接受率谈吞吐，描述的是那段提示词，不是这套运行时。
 
-## 快速开始
+## 只想跑起来？
+
+**[docs/getting-started.zh.md](docs/getting-started.zh.md)**——从
+[Releases 页面](https://github.com/rulith-dev/strixllama/releases)装安装包、要下载的五个模型文件和
+放在哪、点什么。不涉及 Python、ROCm 或任何编译工具。
+
+## 快速开始（从源码）
 
 ```bash
 python bootstrap/bootstrap.py --toolchain          # 把 ROCm SDK 和 ninja 装进 toolchain/，约 5 GB

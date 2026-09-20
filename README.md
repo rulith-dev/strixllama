@@ -25,7 +25,13 @@ Every number in this repository comes with the command that produced it, in
 says so rather than claiming a win — and decode figures carry their draft acceptance, because with
 speculation on, throughput without acceptance describes the prompt rather than the runtime.
 
-## Quick start
+## Just want to run it?
+
+**[docs/getting-started.md](docs/getting-started.md)** — the installer from the
+[releases page](https://github.com/rulith-dev/strixllama/releases), the five model files to download
+and where to put them, and what to press. No Python, ROCm or build tools involved.
+
+## Quick start (from source)
 
 ```bash
 python bootstrap/bootstrap.py --toolchain          # ROCm SDK + ninja into toolchain/, ~5 GB

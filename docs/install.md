@@ -5,7 +5,9 @@
 runs — `llama-server` built from the pinned fork, the eight ROCm DLLs it imports plus the gfx1151
 kernel libraries, the Visual C++ and OpenMP runtimes, the manager and an embedded Python. On a
 machine set up as in section 1, with the model files from section 5 already in LM Studio's folder,
-it needs nothing else: install, open, load the model from the Models page. The bundle is made by
+it needs nothing else: install, open, load the model from the Models page. That path, including
+exactly which five files to download and where to put them, is written out step by step in
+[getting-started.md](getting-started.md). The bundle is made by
 `tools/make_runtime_bundle.py` from a finished build; `BUNDLE.json` inside it records what went in
 and the upstream commit it came from.
 
