@@ -19,7 +19,23 @@ export type Status = {
   // set by the manager: whether this load runs in shared GPU memory, the dedicated carve it saw,
   // a one-off notice about the load (shared_vram_fallback), and why the last load ended if it
   // ended badly
-  unified?: boolean; dedicated_vram?: number | null; notice?: string; failure?: string
+  unified?: boolean; dedicated_vram?: number | null; notice?: string; failure?: string; failure_code?: string
+}
+
+// A failed request arrives as the manager's whole error record, {error, code, params}, when it
+// has a code (strixllama.rs passes it through as JSON), so the page can render `errors.<code>`
+// from its own locale with the parameters filled in; the English text is the fallback. Anything
+// else - the Rust side, the IPC - is a plain string.
+export const describeError = (e: unknown, tr: (key: string, options?: Record<string, unknown>) => string) => {
+  const text = String(e)
+  if (text.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(text)
+      if (parsed && typeof parsed.code === 'string')
+        return tr(`errors.${parsed.code}`, { defaultValue: String(parsed.error || parsed.code), ...(parsed.params || {}) })
+    } catch { /* not the manager's record */ }
+  }
+  return text
 }
 
 type State = { status?: Status; error: string; refresh: () => Promise<Status | undefined> }

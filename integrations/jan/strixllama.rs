@@ -27,7 +27,7 @@ pub async fn strixllama_request(request: Value) -> Result<Value, String> {
             .unwrap_or_else(|| if bundled_python.is_file() { bundled_python } else { PathBuf::from("python") });
         let helper = root.join("tools/manager.py");
         if !helper.is_file() {
-            return Err(format!("找不到 strixllama 管理器 {}，可用 STRIX_ROOT 指定仓库根目录", helper.display()));
+            return Err(format!("The strixllama manager was not found at {}; STRIX_ROOT can point at the repository root", helper.display()));
         }
         let mut command = Command::new(&python);
         command.arg(helper).current_dir(root).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -36,13 +36,18 @@ pub async fn strixllama_request(request: Value) -> Result<Value, String> {
             command.creation_flags(0x08000000);
         }
         let mut child = command.spawn().map_err(|e| format!(
-            "无法启动 Python（{}）：{e}。请确认 python 在 PATH 中，或用 STRIX_PYTHON 指定解释器",
+            "Python ({}) could not be started: {e}. Put python on PATH, or set STRIX_PYTHON to an interpreter",
             python.display()))?;
         child.stdin.take().ok_or("Missing helper stdin")?.write_all(&input).map_err(|e| e.to_string())?;
         let output = child.wait_with_output().map_err(|e| e.to_string())?;
-        let result: Value = serde_json::from_slice(&output.stdout).map_err(|e| format!("管理器响应无效: {e}; {}", String::from_utf8_lossy(&output.stderr)))?;
+        let result: Value = serde_json::from_slice(&output.stdout).map_err(|e| format!("Invalid manager response: {e}; {}", String::from_utf8_lossy(&output.stderr)))?;
         if result.get("ok").and_then(Value::as_bool) != Some(true) {
-            return Err(result.get("error").and_then(Value::as_str).unwrap_or("管理操作失败").to_owned());
+            // a coded error travels whole ({error, code, params}) so the pages can render it in
+            // their own language; anything else is the plain message
+            return Err(match result.get("code") {
+                Some(_) => result.to_string(),
+                None => result.get("error").and_then(Value::as_str).unwrap_or("The manager reported a failure").to_owned(),
+            });
         }
         Ok(result["data"].clone())
     }).await.map_err(|e| e.to_string())?

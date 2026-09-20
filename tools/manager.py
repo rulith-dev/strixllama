@@ -84,6 +84,67 @@ THINKING = {'off': None, 'low': 'low', 'medium': 'medium', 'high': 'xhigh'}
 PORT = 8080
 HIDDEN = 0x08000000 if os.name == 'nt' else 0
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+class ManagerError(ValueError):
+    """An error the app can translate: `code` names it, `params` fill in the message. The text is
+    English for the JSON callers; the pages render `errors.<code>` from their own locale."""
+    def __init__(self, code, **params):
+        self.code, self.params = code, params
+        super().__init__(ERRORS[code].format(**params))
+
+
+def fail(code, **params):
+    raise ManagerError(code, **params)
+
+
+ERRORS = {
+    'not_gguf': 'Select a GGUF model file',
+    'outside_roots': 'The model must be inside a registered model directory',
+    'not_first_shard': 'Select the first shard of a split model',
+    'gguf_truncated': 'The GGUF header is incomplete',
+    'gguf_string': 'A GGUF string length is out of range',
+    'gguf_nesting': 'GGUF arrays are nested too deep',
+    'gguf_array': 'A GGUF array is too long',
+    'gguf_type': 'Unknown GGUF field type',
+    'gguf_version': 'Unsupported GGUF format',
+    'gguf_count': 'The GGUF metadata count is out of range',
+    'model_incomplete': 'The model is damaged or a shard is missing',
+    'model_unlisted': 'The model is not in the list; rescan the model directories',
+    'unknown_field': 'Unknown configuration field',
+    'out_of_range': '{field} must be between {low} and {high}',
+    'not_boolean': '{field} must be on or off',
+    'thinking_level': 'Thinking depth must be one of {levels}',
+    'draft_min': 'The MTP threshold must be between 0 and 1',
+    'ubatch_gt_batch': 'ubatch cannot be larger than batch',
+    'context_exceeds': 'The context is longer than the model declares',
+    'kv_fixed': 'This configuration keeps the KV cache at f16',
+    'flash_attention_value': 'Flash Attention must be on or off',
+    'draft_path': 'The draft model path is invalid',
+    'mmproj_path': 'The vision projector path is invalid',
+    'mmproj_missing': 'No vision projector ({name}) beside the model: add it, pick a file, or turn image input off',
+    'qsa_architecture': 'Sparse attention (QSA) applies to Qwen3.8 Flash Next (qwen4exp) only',
+    'qsa_needs_fa': 'Sparse attention (QSA) needs Flash Attention on',
+    'mtp_architecture': 'MTP is enabled for qwen4exp models only',
+    'draft_missing': "No MTP draft model found: put Unsloth's mtp-*.gguf beside the model, or turn MTP off",
+    'head_mismatch': 'The draft head {head} does not belong to {base}',
+    'identity_changed': 'The process identity has changed; refusing to unload it',
+    'log_path': 'The log path is outside the project directory',
+    'port_busy': 'Port 8080 is in use by another service',
+    'runtime_missing': 'The runtime is not there: {name}',
+    'roots_count': 'Choose between 1 and 12 model directories',
+    'root_missing': 'A model directory does not exist',
+    'not_a_model': 'Drafts and vision projectors cannot be loaded as the chat model',
+    'already_loaded': 'Unload the current model before loading another',
+    'unknown_op': 'Unsupported operation',
+    'request_too_large': 'The request is too large',
+    'request_invalid': 'The request is malformed',
+    'windows_only': 'This manager runs on Windows only',
+    'stop_failed': 'The model process could not be stopped',
+    'launch_failed': 'The model process did not start; see the log',
+}
+# why the last load ended, when its log said nothing more specific (status()['failure'])
+FAILURES = {'oom': 'The GPU ran out of memory', 'error': 'The model process exited with an error'}
 # The defaults are the measured configuration (docs/results.md), not a cautious one: context
 # 262144, batch and ubatch 8192, flash attention on, and - per model, in profile() - sparse
 # attention and MTP. A carve this does not fit is handled by the shared-memory fallback
@@ -184,11 +245,11 @@ def identifier(path):
 def checked_file(value):
     path = Path(value).resolve(strict=True)
     if not path.is_file() or path.suffix.lower() != '.gguf':
-        raise ValueError('请选择 GGUF 模型文件')
+        fail('not_gguf')
     if not any(path.is_relative_to(Path(root).resolve()) for root in settings()['roots']):
-        raise ValueError('模型必须位于已登记的模型目录中')
+        fail('outside_roots')
     if re.search(r'-(?!00001)\d{5}-of-\d{5}\.gguf$', path.name):
-        raise ValueError('分片模型必须选择第一个分片')
+        fail('not_first_shard')
     return path
 
 
@@ -207,37 +268,37 @@ def metadata(path):
         def exact(n):
             b = f.read(n)
             if len(b) != n:
-                raise ValueError('GGUF 文件头不完整')
+                fail('gguf_truncated')
             return b
         def u32(): return struct.unpack('<I', exact(4))[0]
         def u64(): return struct.unpack('<Q', exact(8))[0]
         def string(keep=True):
             n = u64()
             if n > 16 * 1024 * 1024:
-                raise ValueError('GGUF 字符串长度异常')
+                fail('gguf_string')
             if keep:
                 return exact(n).decode('utf-8', 'replace')
             f.seek(n, 1)
         fmt = {0:'B', 1:'b', 2:'H', 3:'h', 4:'I', 5:'i', 6:'f', 7:'?', 10:'Q', 11:'q', 12:'d'}
         def value(kind, keep=True, depth=0):
-            if depth > 3: raise ValueError('GGUF 数组嵌套异常')
+            if depth > 3: fail('gguf_nesting')
             if kind in fmt:
                 code = '<' + fmt[kind]
                 return struct.unpack(code, exact(struct.calcsize(code)))[0]
             if kind == 8: return string(keep)
             if kind == 9:
                 item, n = u32(), u64()
-                if n > 10_000_000: raise ValueError('GGUF 数组过长')
+                if n > 10_000_000: fail('gguf_array')
                 if item in fmt:
                     f.seek(n * struct.calcsize('<' + fmt[item]), 1)
                 else:
                     for _ in range(n): value(item, False, depth+1)
                 return None
-            raise ValueError('未知 GGUF 字段类型')
+            fail('gguf_type')
         if exact(4) != b'GGUF' or u32() not in (2, 3):
-            raise ValueError('不支持的 GGUF 格式')
+            fail('gguf_version')
         tensors, count = u64(), u64()
-        if count > 100000: raise ValueError('GGUF 元数据数量异常')
+        if count > 100000: fail('gguf_count')
         meta = {}
         for _ in range(count):
             key = string()
@@ -247,7 +308,113 @@ def metadata(path):
         return meta
 
 
-def catalog(refresh=False):
+def gguf_layout(path):
+    """The byte layout of a GGUF v3 file: the key-value + tensor-info span, the alignment, the
+    tensors as (name, dims, type, offset) and where the data section starts. Enough to splice two
+    files together without decoding a tensor, which is all merge_draft_head needs."""
+    path = Path(path)
+    with path.open('rb') as f:
+        def exact(n):
+            b = f.read(n)
+            if len(b) != n: fail('gguf_truncated')
+            return b
+        def u32(): return struct.unpack('<I', exact(4))[0]
+        def u64(): return struct.unpack('<Q', exact(8))[0]
+        fmt = {0:'B', 1:'b', 2:'H', 3:'h', 4:'I', 5:'i', 6:'f', 7:'?', 10:'Q', 11:'q', 12:'d'}
+        def value(kind, depth=0):
+            if depth > 3: fail('gguf_nesting')
+            if kind in fmt:
+                code = '<' + fmt[kind]
+                return struct.unpack(code, exact(struct.calcsize(code)))[0]
+            if kind == 8:
+                n = u64()
+                if n > 16 * 1024 * 1024: fail('gguf_string')
+                return exact(n).decode('utf-8', 'replace')
+            if kind == 9:
+                item, n = u32(), u64()
+                if n > 10_000_000: fail('gguf_array')
+                if item in fmt: f.seek(n * struct.calcsize('<' + fmt[item]), 1)
+                else:
+                    for _ in range(n): value(item, depth + 1)
+                return None
+            fail('gguf_type')
+        if exact(4) != b'GGUF' or u32() != 3: fail('gguf_version')
+        n_tensors, n_kv = u64(), u64()
+        if n_kv > 100000 or n_tensors > 100000: fail('gguf_count')
+        kv_start, alignment = f.tell(), 32
+        for _ in range(n_kv):
+            key = value(8); val = value(u32())
+            if key == 'general.alignment' and isinstance(val, int): alignment = val
+        infos_start, tensors = f.tell(), []
+        for _ in range(n_tensors):
+            name = value(8); ndim = u32()
+            if ndim > 8: fail('gguf_count')
+            dims = [u64() for _ in range(ndim)]
+            tensors.append((name, dims, u32(), u64()))
+        infos_end = f.tell()
+    return dict(n_kv=n_kv, span=(kv_start, infos_end), alignment=alignment, tensors=tensors,
+                data_start=(infos_end + alignment - 1) // alignment * alignment, size=path.stat().st_size)
+
+
+def merge_draft_head(base, head, out):
+    """Write `out` = the draft `base` (Unsloth's mtp-*-shared-*.gguf) with the one tensor of `head`
+    (output.weight, the draft's own quantised LM head) appended - the file tools/make_draft_head.py
+    produces, made here from a downloaded 340 MB head instead of a 50 GB target shard and a
+    toolchain. The base's key-value and tensor-info bytes are copied verbatim: offsets are relative
+    to the data section, whose alignment is kept, so nothing has to be re-encoded."""
+    base, head, out = Path(base), Path(head), Path(out)
+    b, h = gguf_layout(base), gguf_layout(head)
+    if (any(t[0] == 'output.weight' for t in b['tensors']) or [t[0] for t in h['tensors']] != ['output.weight']
+            or metadata(head).get('general.architecture') != metadata(base).get('general.architecture')):
+        fail('head_mismatch', head=head.name, base=base.name)
+    name, dims, ttype, _ = h['tensors'][0]
+    # a file with no tensors ends before its (aligned) data section would start, hence the clamp
+    align, base_bytes = b['alignment'], max(0, b['size'] - b['data_start'])
+    offset = (base_bytes + align - 1) // align * align
+    info = (struct.pack('<Q', len(name.encode())) + name.encode() + struct.pack('<I', len(dims))
+            + b''.join(struct.pack('<Q', d) for d in dims) + struct.pack('<IQ', ttype, offset))
+    part = out.with_suffix('.part')
+    with base.open('rb') as src, head.open('rb') as hd, part.open('wb') as dst:
+        dst.write(b'GGUF' + struct.pack('<IQQ', 3, len(b['tensors']) + 1, b['n_kv']))
+        src.seek(b['span'][0]); dst.write(src.read(b['span'][1] - b['span'][0]))
+        dst.write(info); dst.write(b'\0' * (-dst.tell() % align))
+        src.seek(b['data_start'])
+        for chunk in iter(lambda: src.read(16 << 20), b''): dst.write(chunk)
+        dst.write(b'\0' * (offset - base_bytes))
+        hd.seek(h['data_start'])
+        for chunk in iter(lambda: hd.read(16 << 20), b''): dst.write(chunk)
+    part.replace(out)
+    return out
+
+
+def draft_head_name(name):
+    """mtp-<family>-head-<type>.gguf: a downloadable head, not a draft the loader could run."""
+    low = name.lower()
+    return low.startswith('mtp-') and '-head-' in low and '-shared-' not in low
+
+
+def merge_heads(found):
+    """For every downloaded head in the catalog whose family has Unsloth's shared draft in the same
+    directory, make the merged draft once (<shared>-head-<type>.gguf) if it is not there yet.
+    Returns (paths written, {head path: error})."""
+    merged, errors = [], {}
+    for head in found:
+        if head.get('role') != 'head' or head.get('error'): continue
+        low = head['filename'].lower()
+        family, kind = head['filename'][4:low.index('-head-')], head['filename'][low.index('-head-') + 6:-5]
+        folder = Path(head['path']).parent
+        bases = [m for m in found if m.get('role') == 'draft' and not m.get('error') and Path(m['path']).parent == folder
+                 and m['filename'].lower().startswith(f'mtp-{family}-shared-'.lower()) and '-head-' not in m['filename'].lower()]
+        bases.sort(key=lambda m: ('Q4_K_M' not in m['filename'], m['filename']))
+        if not bases: continue
+        out = Path(bases[0]['path']).with_name(Path(bases[0]['path']).stem + f'-head-{kind}.gguf')
+        if out.exists(): continue
+        try: merged.append(str(merge_draft_head(bases[0]['path'], head['path'], out)))
+        except (OSError, ValueError, struct.error) as exc: errors[head['path']] = str(exc)
+    return merged, errors
+
+
+def catalog(refresh=False, _after_merge=False):
     cached = read_json(DATA / 'catalog.json', None)
     if cached is not None and not refresh: return cached
     found = []
@@ -269,7 +436,8 @@ def catalog(refresh=False):
                     if split:
                         shards = [path.with_name(name[:split.start()] + f'-{i:05}-of-{int(split[2]):05}.gguf') for i in range(1, int(split[2])+1)]
                     missing = [p.name for p in shards if not p.exists()]
-                    role = 'projection' if name.lower().startswith('mmproj') or meta.get('general.architecture') == 'clip' else 'draft' if name.lower().startswith('mtp-') else 'model'
+                    role = ('projection' if name.lower().startswith('mmproj') or meta.get('general.architecture') == 'clip'
+                            else 'head' if draft_head_name(name) else 'draft' if name.lower().startswith('mtp-') else 'model')
                     found.append(dict(id=key, path=str(path), name=meta.get('general.name', path.stem),
                                       filename=name, architecture=meta.get('general.architecture', 'unknown'),
                                       size=sum(p.stat().st_size for p in shards if p.exists()), shards=len(shards),
@@ -278,7 +446,15 @@ def catalog(refresh=False):
                                       if re.search(r'(?:UD-)?((?:IQ|Q|MXFP|BF|F)[A-Z0-9_]+)(?:-\d{5}-of|\.gguf)', name, re.I) else str(meta.get('general.file_type', ''))))
                 except (OSError, ValueError, struct.error) as exc:
                     found.append(dict(id=key, path=str(path), filename=name, name=path.stem, error=str(exc), role='invalid', size=0))
-    result = {'models': sorted(found, key=lambda x: (x['role'], x['filename'])), 'roots': settings()['roots'], 'scanned_at': dt.datetime.now().astimezone().isoformat()}
+    # a rescan is also when a downloaded draft head gets merged with its shared draft; the merged
+    # file is then scanned like any other, once
+    merged, errors = merge_heads(found) if refresh and not _after_merge else ([], {})
+    if merged:
+        result = catalog(True, _after_merge=True)
+    else:
+        result = {'models': sorted(found, key=lambda x: (x['role'], x['filename'])), 'roots': settings()['roots'], 'scanned_at': dt.datetime.now().astimezone().isoformat()}
+    if refresh and not _after_merge:
+        result.update(merged=merged, merge_errors=errors)
     atomic_json(DATA / 'catalog.json', result)
     return result
 
@@ -286,28 +462,32 @@ def catalog(refresh=False):
 def model_by_id(model_id):
     for m in catalog()['models']:
         if m['id'] == model_id:
-            if m.get('error') or m.get('missing'): raise ValueError('模型损坏或缺少分片')
+            if m.get('error') or m.get('missing'): fail('model_incomplete')
             checked_file(m['path'])
             return m
-    raise ValueError('模型不在列表中，请重新扫描')
+    fail('model_unlisted')
 
 
 def family_draft():
-    """The draft head to use when the repository's own is not there: on an installed copy there is
-    no models/ directory of ours, but Unsloth's shared-Q4_K_M MTP file ships beside the model, and it
-    drafts the same tokens (see DEFAULT_DRAFT) at under 1% of the pass. Ours is preferred when both
-    are present."""
+    """The MTP draft for this family, if one is on disk: the repository's own first, then the best
+    file under the model roots - a merged *-head-* draft (merge_draft_head) over Unsloth's
+    shared-Q4_K_M over shared-Q8_0, all of which draft the same tokens. None when there is none, and
+    then profile() leaves MTP off instead of pointing at a file that is not there."""
     if DEFAULT_DRAFT.is_file():
         return str(DEFAULT_DRAFT)
     drafts = [m['path'] for m in catalog()['models'] if m.get('role') == 'draft' and MODEL_FAMILY in m['filename'] and not m.get('error')]
-    drafts.sort(key=lambda p: ('head-iq4_xs' not in p, 'Q4_K_M' not in p, p))
-    return drafts[0] if drafts else str(DEFAULT_DRAFT)
+    drafts.sort(key=lambda p: ('-head-' not in p.lower(), 'Q4_K_M' not in p, p))
+    return drafts[0] if drafts else None
 
 
 def profile(model):
     default = dict(DEFAULTS)
-    default['mtp'] = MODEL_FAMILY in Path(model['path']).name
-    default['draft'] = family_draft()
+    # MTP and image input default to on, but only when their file is actually there. A load that
+    # refuses to start because a companion file is missing is the wrong first experience; the
+    # switch turns itself on once the file appears and the directories are rescanned.
+    default['draft'] = family_draft() or ''
+    default['mtp'] = MODEL_FAMILY in Path(model['path']).name and bool(default['draft'])
+    default['vision'] = mmproj_path({}, model).is_file()
     # sparse attention is this architecture's, and above 64K context it is what makes the load fit
     default['qsa'] = model.get('architecture') == 'qwen4exp'
     if model.get('context'): default['context'] = min(default['context'], int(model['context']))
@@ -324,36 +504,36 @@ def profile(model):
 
 
 def validate_profile(raw, model):
-    if not isinstance(raw, dict) or set(raw) - set(DEFAULTS): raise ValueError('未知配置字段')
+    if not isinstance(raw, dict) or set(raw) - set(DEFAULTS): fail('unknown_field')
     cfg = {**profile(model), **raw}
     bounds = dict(context=(512,262144), gpu_layers=(0,999), threads=(1,32), batch=(32,32768), ubatch=(32,32768), draft_max=(1,8), parallel=(1,8))
     for field, (low, high) in bounds.items():
-        if type(cfg[field]) is not int or not low <= cfg[field] <= high: raise ValueError(f'{field} 应在 {low}–{high} 之间')
+        if type(cfg[field]) is not int or not low <= cfg[field] <= high: fail('out_of_range', field=field, low=low, high=high)
     for field in ('mtp', 'ngram_spec', 'qsa', 'shared_vram', 'trunk_decode_q6k', 'vision'):
-        if type(cfg[field]) is not bool: raise ValueError(f'{field} 必须为开关值')
+        if type(cfg[field]) is not bool: fail('not_boolean', field=field)
     # thinking was a switch before it was a level; a profile saved back then still loads
     if type(cfg['thinking']) is bool: cfg['thinking'] = 'high' if cfg['thinking'] else 'off'
-    if cfg['thinking'] not in THINKING: raise ValueError('思考深度应为 ' + '、'.join(THINKING))
-    if type(cfg['draft_min']) not in (int,float) or not 0 <= cfg['draft_min'] <= 1: raise ValueError('MTP 阈值应在 0–1 之间')
-    if cfg['ubatch'] > cfg['batch']: raise ValueError('ubatch 不能大于 batch')
-    if model.get('context') and cfg['context'] > model['context']: raise ValueError('上下文超过模型声明长度')
-    if cfg['kv'] != 'f16': raise ValueError('当前配置固定 f16 KV')
-    if cfg['flash_attention'] not in ('on', 'off'): raise ValueError('Flash Attention 应为 on 或 off')
-    if not isinstance(cfg['draft'], str): raise ValueError('草稿模型路径无效')
-    if not isinstance(cfg['mmproj'], str): raise ValueError('视觉投影模型路径无效')
+    if cfg['thinking'] not in THINKING: fail('thinking_level', levels=', '.join(THINKING))
+    if type(cfg['draft_min']) not in (int,float) or not 0 <= cfg['draft_min'] <= 1: fail('draft_min')
+    if cfg['ubatch'] > cfg['batch']: fail('ubatch_gt_batch')
+    if model.get('context') and cfg['context'] > model['context']: fail('context_exceeds')
+    if cfg['kv'] != 'f16': fail('kv_fixed')
+    if cfg['flash_attention'] not in ('on', 'off'): fail('flash_attention_value')
+    if not isinstance(cfg['draft'], str): fail('draft_path')
+    if not isinstance(cfg['mmproj'], str): fail('mmproj_path')
     if cfg['vision']:
         # a path the user picked goes through the full check (it must sit in a registered model root);
         # the automatic one ships beside the model, so only its existence matters
         if cfg['mmproj']: checked_file(cfg['mmproj'])
-        elif not mmproj_path(cfg, model).is_file(): raise ValueError('未找到随模型附带的视觉投影模型，请指定文件或关闭图像输入')
+        elif not mmproj_path(cfg, model).is_file(): fail('mmproj_missing', name=MMPROJ_NAME)
     if cfg['qsa']:
         if model.get('architecture') != 'qwen4exp':
-            raise ValueError('QSA 优化仅适用于 Qwen3.8 Flash Next（qwen4exp）')
-        if cfg['flash_attention'] != 'on': raise ValueError('QSA 优化需要开启 Flash Attention')
+            fail('qsa_architecture')
+        if cfg['flash_attention'] != 'on': fail('qsa_needs_fa')
     if cfg['mtp']:
-        if model['architecture'] != 'qwen4exp': raise ValueError('此第一版只对 qwen4exp 启用 MTP')
-        try: checked_file(cfg['draft'])
-        except (FileNotFoundError, OSError): raise ValueError('未找到 MTP 草稿模型：把 Unsloth 的 mtp-*.gguf 放到模型旁边，或关闭 MTP')
+        if model['architecture'] != 'qwen4exp': fail('mtp_architecture')
+        if not cfg['draft'] or not Path(cfg['draft']).is_file(): fail('draft_missing')
+        checked_file(cfg['draft'])
     return cfg
 
 
@@ -507,7 +687,7 @@ def argv(model, cfg):
 
 def process_identity(pid, terminate=False, expected=None):
     """Hold the same process handle while checking identity and terminating it."""
-    if os.name != 'nt': raise RuntimeError('当前管理器仅支持 Windows')
+    if os.name != 'nt': fail('windows_only')
     k = ctypes.WinDLL('kernel32', use_last_error=True)
     k.OpenProcess.argtypes = [wintypes.DWORD,wintypes.BOOL,wintypes.DWORD]
     k.OpenProcess.restype = wintypes.HANDLE
@@ -530,8 +710,8 @@ def process_identity(pid, terminate=False, expected=None):
             # matches, and that it is a llama-server at all, is the check - so a server another
             # copy of this manager started can be unloaded too, and nothing else ever is
             if result != expected or Path(result['exe']).name.lower() != 'llama-server.exe':
-                raise ValueError('进程身份已变化，拒绝卸载')
-            if not k.TerminateProcess(handle,0): raise OSError('无法停止模型进程')
+                fail('identity_changed')
+            if not k.TerminateProcess(handle,0): fail('stop_failed')
             k.WaitForSingleObject(handle,10000)
         return result
     finally: k.CloseHandle(handle)
@@ -596,7 +776,7 @@ def status():
             remember_shared_vram(m, cfg)
             s = launch(m, cfg, unified=True, notice='shared_vram_fallback')
         except Exception as exc:
-            s = {**s, 'exited': {**exited, 'reason': 'error', 'line': f'{exited.get("line", "")}；改用共享显存重新加载失败：{exc}'}}
+            s = {**s, 'exited': {**exited, 'reason': 'error', 'line': f'{exited.get("line", "")}; reloading in shared memory failed: {exc}'}}
             atomic_json(DATA / 'process.json', s)
     result = {**s, 'status':'stopped', 'endpoint':f'http://127.0.0.1:{PORT}/v1',
               'runtime':s.get('identity', {}).get('exe', str(RUNTIME)),
@@ -605,7 +785,9 @@ def status():
     if e.get('reason') in ('oom', 'error'):
         # a plain exit with nothing in the log is not reported: the app closing takes the server
         # with it, and "the last load failed" would be the wrong thing to say about that
-        result['failure'] = e.get('line') or {'oom': '显存不足', 'error': '模型进程报错退出'}[e['reason']]
+        result['failure'] = e.get('line') or FAILURES[e['reason']]
+        # the code only when the text is ours to translate, not a line quoted from the log
+        result['failure_code'] = None if e.get('line') else e['reason']
     if s.get('identity'):
         result['status']='loading'
         result['model_name'] = next((x.get('name') for x in catalog()['models'] if x.get('path') == s.get('model_path')), None) or Path(s.get('model_path', '')).stem
@@ -621,7 +803,7 @@ def status():
 def logs(offset=0):
     s = state()
     path = Path(s.get('log') or s.get('last_log') or ROOT/'logs'/'not-started.log')
-    if not path.resolve().is_relative_to((ROOT/'logs').resolve()): raise ValueError('日志路径超出项目目录')
+    if not path.resolve().is_relative_to((ROOT/'logs').resolve()): fail('log_path')
     if not path.exists(): return {'text':'','offset':0,'file':str(path),'reset':False}
     size = path.stat().st_size
     offset = max(0,int(offset))
@@ -643,16 +825,16 @@ def logs(offset=0):
 def launch(m, cfg, unified, notice=None):
     """Start the runtime for model m with the already validated profile cfg: check the port, write
     the log banner, record the process identity. `unified` is the shared-memory decision."""
-    try: http_json('/health'); raise ValueError('8080 端口正被其他服务占用')
+    try: http_json('/health'); fail('port_busy')
     except (urllib.error.URLError,TimeoutError): pass
     # Check port before allocating model memory; do not stop unrelated engines.
     import socket
     with socket.socket() as sock:
         try: sock.bind(('127.0.0.1',PORT))
-        except OSError: raise ValueError('8080 端口正被其他服务占用')
+        except OSError: fail('port_busy')
     runtime = selected_runtime(cfg)
     if not runtime.is_file() or not (runtime.parent/'ggml-hip.dll').is_file():
-        raise ValueError(f'优化运行时不存在：{runtime.parent.name}')
+        fail('runtime_missing', name=runtime.parent.name)
     log=ROOT/'logs'/('jan-managed-'+dt.datetime.now().strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex[:6]+'.log')
     log.parent.mkdir(exist_ok=True)
     command=argv(m,cfg)
@@ -670,7 +852,7 @@ def launch(m, cfg, unified, notice=None):
         f.flush()
         proc=subprocess.Popen(command,stdout=f,stderr=subprocess.STDOUT,stdin=subprocess.DEVNULL,env=env,creationflags=HIDDEN,cwd=ROOT)
     ident=process_identity(proc.pid)
-    if not ident: raise RuntimeError('模型进程启动失败，请查看日志')
+    if not ident: fail('launch_failed')
     saved=dict(identity=ident,model_id=m['id'],model_path=m['path'],log=str(log),command=subprocess.list2cmdline(command),profile=cfg,
                unified=unified,started_at=dt.datetime.now().astimezone().isoformat(),adopted=False,
                runtime_env={k:v for k,v in env.items() if k.startswith(('LLAMA_','GGML_','STRIX_'))})
@@ -684,12 +866,16 @@ def handle(op, data):
     if op=='status': return status()
     if op=='logs': return logs(data.get('offset',0))
     if op=='profile':
-        m=model_by_id(data['id']); return {'model':m,'profile':profile(m)}
+        m=model_by_id(data['id'])
+        # what the companion switches can be turned on with: the page explains an off switch by it
+        companions={'draft':family_draft(),'mmproj':mmproj_path({},m).is_file(),
+                    'draft_head':any('-head-' in Path(p).name.lower() for p in [family_draft() or ''])}
+        return {'model':m,'profile':profile(m),'companions':companions}
     if op=='roots':
         roots=data['roots']
-        if not isinstance(roots,list) or not 1 <= len(roots) <= 12: raise ValueError('请选择 1–12 个模型目录')
+        if not isinstance(roots,list) or not 1 <= len(roots) <= 12: fail('roots_count')
         parsed=[str(Path(r).resolve(strict=True)) for r in roots]
-        if any(not Path(r).is_dir() for r in parsed): raise ValueError('模型目录不存在')
+        if any(not Path(r).is_dir() for r in parsed): fail('root_missing')
         cfg=settings();cfg['roots']=list(dict.fromkeys(parsed));atomic_json(DATA/'settings.json',cfg)
         return catalog(True)
     if op=='save':
@@ -703,20 +889,20 @@ def handle(op, data):
         return {'status':'stopped'}
     if op=='start':
         m=model_by_id(data['id'])
-        if m['role']!='model': raise ValueError('草稿和视觉投影不能单独作为聊天模型加载')
+        if m['role']!='model': fail('not_a_model')
         cfg=validate_profile(data.get('profile',profile(m)),m)
-        if state().get('identity'): raise ValueError('请先卸载当前模型，再加载所选模型')
+        if state().get('identity'): fail('already_loaded')
         return {**launch(m,cfg,unified_memory(m,cfg)),'status':'loading'}
-    raise ValueError('不支持的管理操作')
+    fail('unknown_op')
 
 
 def main():
     sys.stdout.reconfigure(encoding='utf-8')
     try:
         raw=sys.stdin.buffer.read(65537)
-        if len(raw)>65536: raise ValueError('请求过大')
+        if len(raw)>65536: fail('request_too_large')
         request=json.loads(raw)
-        if not isinstance(request,dict): raise ValueError('请求格式无效')
+        if not isinstance(request,dict): fail('request_invalid')
         # Serialize all access across the short-lived native IPC helpers.
         DATA.mkdir(parents=True,exist_ok=True)
         with (DATA/'manager.lock').open('a+b') as lock:
@@ -727,6 +913,9 @@ def main():
             try: result=handle(request['op'],request.get('data',{}))
             finally: lock.seek(0);msvcrt.locking(lock.fileno(),msvcrt.LK_UNLCK,1)
         print(json.dumps({'ok':True,'data':result},ensure_ascii=False))
+    except ManagerError as exc:
+        print(json.dumps({'ok':False,'error':str(exc),'code':exc.code,'params':exc.params},ensure_ascii=False))
+        sys.exit(1)
     except Exception as exc:
         print(json.dumps({'ok':False,'error':str(exc)},ensure_ascii=False))
         sys.exit(1)

@@ -20,6 +20,23 @@ def gguf(path):
     fields+=s('qwen4exp.context_length')+struct.pack('<II',4,32768)
     path.write_bytes(b'GGUF'+struct.pack('<IQQ',3,0,4)+fields)
 
+def gguf_tensors(path,tensors,arch='qwen4exp'):
+    """A GGUF v3 file with real tensor infos and a data section: tensors = [(name, dims, type, bytes)]."""
+    def s(text):
+        b=text.encode();return struct.pack('<Q',len(b))+b
+    kv=s('general.architecture')+struct.pack('<I',8)+s(arch)+s('general.name')+struct.pack('<I',8)+s('tiny')
+    infos,offset,data=b'',0,b''
+    for name,dims,ttype,payload in tensors:
+        infos+=s(name)+struct.pack('<I',len(dims))+b''.join(struct.pack('<Q',d) for d in dims)+struct.pack('<IQ',ttype,offset)
+        data+=payload;offset+=len(payload)
+        pad=-offset%32;data+=b'\0'*pad;offset+=pad
+    head=b'GGUF'+struct.pack('<IQQ',3,len(tensors),2)+kv+infos
+    path.write_bytes(head+b'\0'*(-len(head)%32)+data)
+
+def first_model(refresh=True):
+    # the catalog sorts by role, and the draft and projector created in setUp sort before the model
+    return next(x for x in m.catalog(refresh)['models'] if x['role']=='model')
+
 class ManagerTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
@@ -32,6 +49,8 @@ class ManagerTests(unittest.TestCase):
         # vision defaults on, and the projector is looked for beside the model. Without this the
         # suite passed only on a machine that happened to have a real one at the old default path.
         self.mmproj=self.file.with_name(m.MMPROJ_NAME);gguf(self.mmproj)
+        # MTP likewise defaults on only when a draft for the family is on disk
+        self.draft=self.file.with_name('mtp-'+m.MODEL_FAMILY+'-shared-Q4_K_M.gguf');gguf(self.draft)
         self.model={'id':'model','path':str(self.file),'architecture':'qwen4exp','context':32768,'role':'model'}
         # a fake runtime, so the suite runs on a machine that has never built one
         rt=self.root/'bin'/'hip-rocm101';rt.mkdir(parents=True)
@@ -45,7 +64,7 @@ class ManagerTests(unittest.TestCase):
         first=[x for x in m.catalog(True)['models'] if x['role']=='model'];self.assertEqual(len(first),1)
         self.assertEqual(first[0]['size'],self.file.stat().st_size*2)
         self.second.unlink()
-        self.assertEqual(m.catalog(True)['models'][0]['missing'],[self.second.name])
+        self.assertEqual(first_model()['missing'],[self.second.name])
     def test_model_path_cannot_escape_registered_roots(self):
         outside=self.root/'outside.gguf';gguf(outside)
         with self.assertRaises(ValueError):m.checked_file(outside)
@@ -59,7 +78,7 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(args[args.index('-m')+1],str(self.file))
         self.assertIn('f16',args);self.assertNotIn('--spec-type',args)
     def test_large_batches_survive_save_and_reach_launch_without_starting_model(self):
-        model=m.catalog(True)['models'][0]
+        model=first_model()
         with patch.object(m,'state',return_value={}),patch.object(m.subprocess,'Popen') as popen:
             for batch,ubatch in ((4096,4096),(8192,4096),(8192,8192),(16384,16384),(32768,32768)):
                 with self.subTest(batch=batch,ubatch=ubatch):
@@ -75,7 +94,7 @@ class ManagerTests(unittest.TestCase):
             with self.subTest(values=values),self.assertRaises(ValueError):
                 m.validate_profile({'mtp':False,**values},model)
     def test_ngram_spec_legacy_default_and_invalid_values(self):
-        model=m.catalog(True)['models'][0]
+        model=first_model()
         settings=m.settings();settings['profiles'][model['id']]={'mtp':False,'context':8192}
         m.atomic_json(m.DATA/'settings.json',settings)
         before=(m.DATA/'settings.json').read_bytes()
@@ -89,7 +108,7 @@ class ManagerTests(unittest.TestCase):
                 m.validate_profile({'ngram_spec':value},model)
     def test_ngram_save_start_is_independent_of_mtp_and_embedding_placement(self):
         from types import SimpleNamespace
-        model=m.catalog(True)['models'][0]
+        model=first_model()
         ident={'pid':123,'exe':str(m.RUNTIME.resolve()),'birth':456}
         with patch.object(m,'ROOT',self.root),patch.object(m,'discover',return_value=[]), \
              patch.object(m,'process_identity',return_value=ident), \
@@ -144,7 +163,7 @@ class ManagerTests(unittest.TestCase):
         for bad in ('false','xhigh','extra-high',3):
             with self.assertRaises(ValueError):m.validate_profile({'thinking':bad},self.model)
     def test_profile_normalises_the_old_boolean_thinking_and_drops_unknown_fields(self):
-        model=m.catalog(True)['models'][0]
+        model=first_model()
         settings=m.settings();settings['profiles'][model['id']]={'thinking':True,'ngram_cpu':True,'context':8192}
         m.atomic_json(m.DATA/'settings.json',settings)
         cfg=m.profile(model)
@@ -175,7 +194,7 @@ class ManagerTests(unittest.TestCase):
         popen=stack.enter_context(patch.object(m.subprocess,'Popen',return_value=SimpleNamespace(pid=123)))
         return stack,popen
     def test_out_of_memory_falls_back_to_shared_memory_once_and_is_remembered(self):
-        model=m.catalog(True)['models'][0]
+        model=first_model()
         ident={'pid':123,'exe':str(m.RUNTIME.resolve()),'birth':456}
         alive=[ident]
         stack,popen=self.running(alive)
@@ -208,7 +227,7 @@ class ManagerTests(unittest.TestCase):
             self.assertEqual(popen.call_args.kwargs['env']['GGML_HIP_ENABLE_UNIFIED_MEMORY'],'0')
             m.handle('stop',{})
     def test_a_death_in_shared_memory_is_reported_not_retried(self):
-        model=m.catalog(True)['models'][0]
+        model=first_model()
         ident={'pid':123,'exe':str(m.RUNTIME.resolve()),'birth':456}
         alive=[ident]
         stack,popen=self.running(alive)
@@ -251,16 +270,18 @@ class ManagerTests(unittest.TestCase):
             m.catalog(True)
             self.assertEqual(Path(m.profile(model)['draft']).resolve(),head.resolve())
             head.unlink();shared.unlink();m.catalog(True)
-            with self.assertRaisesRegex(ValueError,'草稿'):m.validate_profile({'mtp':True},model)
+            with self.assertRaisesRegex(ValueError,'draft'):m.validate_profile({'mtp':True},model)
+            # and the default no longer asks for a file that is not there
+            self.assertFalse(m.profile(model)['mtp']);self.assertEqual(m.profile(model)['draft'],'')
     def test_saving_configuration_does_not_start_a_process(self):
         m.catalog(True)
-        model=m.catalog()['models'][0]
+        model=first_model(False)
         with patch.object(m,'state',return_value={}),patch.object(m.subprocess,'Popen') as popen:
             result=m.handle('save',{'id':model['id'],'profile':{'context':8192,'mtp':False}})
             self.assertEqual(result['profile']['context'],8192);popen.assert_not_called()
         self.assertEqual(m.profile(model)['context'],8192)
     def test_flash_attention_survives_save_and_reaches_launch_arguments(self):
-        model=m.catalog(True)['models'][0]
+        model=first_model()
         self.assertEqual(m.profile(model)['flash_attention'],'on')
         with patch.object(m,'state',return_value={}),patch.object(m.subprocess,'Popen') as popen:
             for mode in ('on','off'):
@@ -311,7 +332,7 @@ class ManagerTests(unittest.TestCase):
         self.assertNotIn('identity',m.read_json(m.DATA/'process.json',{}))
 
     def test_defaults_are_the_measured_configuration_per_architecture(self):
-        model=m.catalog(True)['models'][0]
+        model=first_model()
         cfg=m.profile(model)
         # the numbers in docs/results.md, so a first load performs as claimed
         self.assertEqual((cfg['context'],cfg['batch'],cfg['ubatch'],cfg['flash_attention']),(32768,8192,8192,'on'))  # context clamped to the model's declared length
@@ -324,7 +345,7 @@ class ManagerTests(unittest.TestCase):
         self.assertFalse(m.profile(other)['qsa']);self.assertFalse(m.profile(other)['mtp'])
         m.validate_profile(m.profile(other),other)
     def test_qsa_legacy_profile_keeps_its_saved_fields(self):
-        model=m.catalog(True)['models'][0]
+        model=first_model()
         settings=m.settings();settings['profiles'][model['id']]={'context':16384,'flash_attention':'on'}
         m.atomic_json(m.DATA/'settings.json',settings)
         cfg=m.validate_profile({},model)
@@ -341,7 +362,7 @@ class ManagerTests(unittest.TestCase):
             m.validate_profile({'qsa':True,'flash_attention':'on'},{**self.model,'architecture':'qwen35moe'})
     def test_qsa_save_start_stop_roundtrip_preserves_model_settings(self):
         from types import SimpleNamespace
-        model=m.catalog(True)['models'][0]
+        model=first_model()
         baseline=m.validate_profile({'context':16384,'flash_attention':'on','mtp':True,
                                      'draft':str(self.file),'draft_max':3,'draft_min':0.35},model)
         settings=m.settings();settings['profiles'][model['id']]=baseline
@@ -387,5 +408,43 @@ class ManagerTests(unittest.TestCase):
             self.assertIsNone(child.poll())
         finally:
             child.terminate();child.wait(timeout=5)
+    def test_draft_head_merge_splices_the_tensor_without_decoding_anything(self):
+        base=self.root/'models'/'mtp-Fam-shared-Q4_K_M.gguf';gguf_tensors(base,[('a',[4],0,b'A'*16),('b',[2],0,b'B'*8)])
+        head=self.root/'models'/'mtp-Fam-head-iq4_xs.gguf';gguf_tensors(head,[('output.weight',[8,2],1,b'H'*32)])
+        out=self.root/'models'/'merged.gguf'
+        m.merge_draft_head(base,head,out)
+        lay=m.gguf_layout(out)
+        self.assertEqual([t[0] for t in lay['tensors']],['a','b','output.weight'])
+        self.assertEqual(lay['tensors'][2][1:],([8,2],1,64))   # after the 40 base bytes, aligned to 32
+        data=out.read_bytes()[lay['data_start']:]
+        self.assertEqual(data[:40],b'A'*16+b'\0'*16+b'B'*8);self.assertEqual(data[64:96],b'H'*32)
+        self.assertEqual(m.metadata(out)['general.architecture'],'qwen4exp')
+        self.assertFalse(out.with_suffix('.part').exists())
+        # only a lone output.weight may be appended, and only once
+        two=self.root/'models'/'mtp-Fam-head-two.gguf';gguf_tensors(two,[('output.weight',[2],0,b'x'*8),('other',[2],0,b'y'*8)])
+        with self.assertRaises(ValueError) as caught:m.merge_draft_head(base,two,self.root/'models'/'x.gguf')
+        self.assertEqual(caught.exception.code,'head_mismatch')
+        with self.assertRaises(ValueError):m.merge_draft_head(out,head,self.root/'models'/'y.gguf')
+    def test_rescan_merges_a_downloaded_head_with_the_shared_draft_once_and_prefers_it(self):
+        head=self.file.with_name('mtp-'+m.MODEL_FAMILY+'-head-iq4_xs.gguf');gguf_tensors(head,[('output.weight',[4],0,b'H'*16)])
+        merged=self.draft.with_name(self.draft.stem+'-head-iq4_xs.gguf')
+        with patch.object(m,'DEFAULT_DRAFT',self.root/'models'/'missing-head.gguf'):
+            c=m.catalog(True)
+            self.assertEqual([Path(p).resolve() for p in c['merged']],[merged.resolve()]);self.assertEqual(c['merge_errors'],{})
+            roles={x['filename']:x['role'] for x in c['models']}
+            self.assertEqual(roles[head.name],'head');self.assertEqual(roles[merged.name],'draft')
+            self.assertEqual(Path(m.family_draft()).resolve(),merged.resolve())
+            model={**self.model,'path':str(self.file.with_name(m.MODEL_FAMILY+'-UD-IQ4_XS.gguf'))}
+            self.assertEqual(Path(m.profile(model)['draft']).resolve(),merged.resolve())
+            self.assertEqual(m.catalog(True)['merged'],[])   # already there: not written again
+            # a head alone, nothing to merge it with, is listed and left alone
+            self.draft.unlink();merged.unlink()
+            c=m.catalog(True);self.assertEqual(c['merged'],[]);self.assertIn(head.name,{x['filename'] for x in c['models']})
+            self.assertFalse(m.profile(model)['mtp'])
+    def test_errors_carry_a_code_for_the_app_to_translate(self):
+        with self.assertRaises(m.ManagerError) as caught:m.validate_profile({'context':1},self.model)
+        self.assertEqual((caught.exception.code,caught.exception.params),('out_of_range',{'field':'context','low':512,'high':262144}))
+        self.assertIn('between 512 and 262144',str(caught.exception))
+        for code in m.ERRORS: m.ERRORS[code].format(**{k:'' for k in ('field','low','high','levels','name','head','base')})
 
 if __name__=='__main__':unittest.main()

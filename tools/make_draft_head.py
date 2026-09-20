@@ -89,8 +89,16 @@ def main():
     ap.add_argument("--type", default="iq4_xs", help="ggml type for the draft's head")
     ap.add_argument("--out", help="default: <base>-head-<type>.gguf, beside the base so the manager lists it")
     ap.add_argument("--no-quantize-tool", action="store_true", help="quantize in numpy (q4_0/q8_0 only)")
+    ap.add_argument("--head-only", action="store_true",
+                    help="write just the quantised head (mtp-<family>-head-<type>.gguf, ~340 MB): the release asset "
+                         "the manager merges with a user's shared draft at rescan (manager.merge_draft_head)")
     args = ap.parse_args()
-    out = args.out or args.base.replace(".gguf", "-head-%s.gguf" % args.type)
+    if args.head_only:
+        low = os.path.basename(args.base).lower()
+        family = os.path.basename(args.base)[4:low.index("-shared-")]
+        out = args.out or os.path.join(os.path.dirname(args.base), "mtp-%s-head-%s.gguf" % (family, args.type))
+    else:
+        out = args.out or args.base.replace(".gguf", "-head-%s.gguf" % args.type)
     if os.path.exists(out):
         sys.exit("%s already exists" % out)
     args.target = args.target or find_target(args.base)
@@ -132,7 +140,7 @@ def main():
         head = (qt.data, qt.tensor_type)
         print("llama-quantize: output.weight -> %s %.0f MB" % (qt.tensor_type.name, qt.n_bytes / 1e6))
 
-    tensors = [(t.name, t.data, t.tensor_type) for t in base.tensors]
+    tensors = [] if args.head_only else [(t.name, t.data, t.tensor_type) for t in base.tensors]
     tensors.append(("output.weight", head[0], head[1]))
     write_gguf(out, arch, base, tensors)
     print("wrote %s (%.0f MB) in %.0fs" % (out, os.path.getsize(out) / 1e6, time.time() - t0))

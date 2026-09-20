@@ -129,6 +129,12 @@ configuration page only lists drafts found under the registered model directorie
 elsewhere never appears in it. Press *Rescan* on the Models page and the `*-head-*` file is
 preferred automatically for every profile that has not chosen a draft by hand.
 
+`--head-only` writes just the quantised tensor instead, `mtp-<family>-head-<type>.gguf` (349 MB):
+that is the release asset. The manager's `merge_draft_head()` splices such a file with the shared
+draft in the same directory at rescan, in pure Python, copying the base's key-value and tensor-info
+bytes verbatim and appending one tensor — byte-for-byte the same tensors and metadata as this
+script's output, verified against it. So an installed copy needs neither numpy nor `llama-quantize`.
+
 Why it helps: the `shared-*` drafts borrow the target's Q6_K head, which streams 521 MB on every
 draft step — 2.4 ms of a 4.3 ms step. Every drafted token is verified by the target, so a coarser
 head can only cost acceptance, and at IQ4_XS acceptance did not move: +5% on English, +9% on Chinese.

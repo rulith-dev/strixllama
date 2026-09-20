@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { request, useStrixLlamaStatus, type Profile } from './status'
+import { request, describeError, useStrixLlamaStatus, type Profile } from './status'
 import { Database, SlidersHorizontal, Terminal, RefreshCw, Play, Square, Search, Copy, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,7 +16,11 @@ type Model = { id: string; path: string; name: string; filename: string; archite
 // The four levels this model's chat template actually has: it accepts low, medium and xhigh, folds
 // 'high' into xhigh, and injects nothing at all for medium. A fifth level would be a duplicate.
 const THINKING_LEVELS = ['off', 'low', 'medium', 'high']
-type Catalog = { models: Model[]; roots: string[]; scanned_at: string }
+// merged / merge_errors: set by a rescan, when a downloaded draft head was combined with its shared draft
+type Catalog = { models: Model[]; roots: string[]; scanned_at: string; merged?: string[]; merge_errors?: Record<string, string> }
+// what the companion switches have to work with: the draft the profile would use (null when none is
+// on disk), whether it is a merged *-head-* one, and whether the projector sits beside the model
+type Companions = { draft: string | null; draft_head: boolean; mmproj: boolean }
 type LogChunk = { text: string; offset: number; file: string; reset: boolean }
 type View = 'models' | 'configuration' | 'developer'
 const gb = (n: number) => `${(n / 1e9).toFixed(1)} GB`
@@ -32,6 +36,7 @@ export default function StrixLlamaPage({ view }: { view: View }) {
   const refreshStatus = useStrixLlamaStatus(s => s.refresh)
   const [selected, setSelected] = useState('')
   const [profile, setProfile] = useState<Profile>()
+  const [companions, setCompanions] = useState<Companions>()
   const [query, setQuery] = useState('')
   const [kind, setKind] = useState('model')
   const [busy, setBusy] = useState(false)
@@ -65,11 +70,16 @@ export default function StrixLlamaPage({ view }: { view: View }) {
   const ngramPending = status?.model_path === model?.path && profile && runningNgram !== undefined && profile.ngram_spec !== runningNgram
   const act = async (fn: () => Promise<void>) => {
     setBusy(true); setError(''); setNotice(''); setNoticeKey('')
-    try { await fn() } catch (e) { setError(String(e)) } finally { setBusy(false) }
+    try { await fn() } catch (e) { setError(describeError(e, tr)) } finally { setBusy(false) }
   }
   const say = (key: string) => { setNoticeKey(key); setNotice(tr(`notice.${key}`)) }
   const refreshCatalog = async (refresh = false) => {
     const c = await request<Catalog>('catalog', { refresh }); setCatalog(c); setRootsText(c.roots.join('\n'))
+    // a rescan may have combined a downloaded draft head with its shared draft; say so, it is the
+    // one thing on this page that writes a file
+    if (c.merged?.length) setNotice(tr('notice.headMerged', { files: c.merged.map(p => p.split(/[\\/]/).pop()).join(', ') }))
+    const failed = Object.entries(c.merge_errors || {})
+    if (failed.length) setError(failed.map(([p, e]) => `${p.split(/[\\/]/).pop()}: ${describeError(e, tr)}`).join('\n'))
     return c
   }
   useEffect(() => {
@@ -81,7 +91,7 @@ export default function StrixLlamaPage({ view }: { view: View }) {
         setCatalog(c); setRootsText(c.roots.join('\n'))
         const remembered = sessionStorage.getItem('strixllama-selected')
         setSelected(c.models.find(m => m.id === remembered && m.role === 'model')?.id || c.models.find(m => m.path === s?.model_path)?.id || c.models.find(m => m.role === 'model')?.id || '')
-      } catch (e) { if (!disposed) setError(String(e)) }
+      } catch (e) { if (!disposed) setError(describeError(e, tr)) }
     }
     void init()
     // the status itself is polled once for the whole app, by StrixLlamaSync
@@ -91,7 +101,7 @@ export default function StrixLlamaPage({ view }: { view: View }) {
     let disposed = false
     setProfile(undefined)
     if (selected) sessionStorage.setItem('strixllama-selected', selected)
-    if (selected) request<{ profile: Profile }>('profile', { id: selected }).then(r => { if (!disposed) setProfile(r.profile) }).catch(e => { if (!disposed) setError(String(e)) })
+    if (selected) request<{ profile: Profile; companions: Companions }>('profile', { id: selected }).then(r => { if (!disposed) { setProfile(r.profile); setCompanions(r.companions) } }).catch(e => { if (!disposed) setError(describeError(e, tr)) })
     return () => { disposed = true }
   }, [selected])
   useEffect(() => {
@@ -106,7 +116,7 @@ export default function StrixLlamaPage({ view }: { view: View }) {
         if (disposed) return
         logCursor.current = { offset: r.offset, file: r.file }
         setLogText(t => ((r.reset ? '' : t) + r.text).split('\n').slice(-2500).join('\n'))
-      } catch (e) { if (!disposed) setError(String(e)) } finally { pending = false }
+      } catch (e) { if (!disposed) setError(describeError(e, tr)) } finally { pending = false }
     }
     void poll(); const timer = setInterval(poll, 1200)
     return () => { disposed = true; clearInterval(timer) }
@@ -135,8 +145,8 @@ export default function StrixLlamaPage({ view }: { view: View }) {
       <div className="flex items-center justify-between gap-4"><div><div className="flex items-center gap-3"><h1 className="text-xl font-semibold">{tr('title')}</h1><span className={`rounded-full px-3 py-1 text-xs ${status?.status === 'ready' ? 'bg-emerald-500/10 text-emerald-500' : status?.status === 'loading' ? 'bg-amber-500/10 text-amber-500' : 'bg-muted text-muted-foreground'}`}>{stateText(status?.status || 'stopped')}</span><span className="rounded-full border px-3 py-1 text-xs text-muted-foreground" title={tr('backendHint')}>HIP/ROCm</span></div><p className="mt-1 text-sm text-muted-foreground">{tr('subtitle')}</p></div><div className="flex items-center gap-2"><code className="text-xs text-muted-foreground">{status?.endpoint || 'http://127.0.0.1:8080/v1'}</code><Button size="sm" variant="outline" disabled={busy || !status?.identity} onClick={stop}><Square size={14} />{tr('unload')}</Button></div></div>
       <nav aria-label={tr('nav')} className="mt-5 flex gap-2">{tabs.map(tab => <Link key={tab.id} to={`/strixllama/${tab.id}` as '/strixllama/models'} className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm ${view === tab.id ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-muted'}`}><tab.icon size={16} />{tab.label}</Link>)}</nav>
     </div>
-    {(error || pollError) && <div role="alert" className="mx-6 mt-4 rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-500">{error || pollError}</div>}
-    {status?.failure && !status.identity && <div role="alert" className="mx-6 mt-4 rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-500">{tr('failure', { reason: status.failure })}</div>}
+    {(error || pollError) && <div role="alert" className="mx-6 mt-4 rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-500">{error || describeError(pollError, tr)}</div>}
+    {status?.failure && !status.identity && <div role="alert" className="mx-6 mt-4 rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-500">{tr('failure', { reason: status.failure_code ? tr(`errors.${status.failure_code}`) : status.failure })}</div>}
     {notice && <div role="status" className="mx-6 mt-4 rounded-lg bg-emerald-500/10 p-3 text-sm text-emerald-600 dark:text-emerald-400">{notice}</div>}
     {view === 'models' && <div className="min-h-0 flex-1 overflow-auto p-6">
       <div className="mb-4 flex flex-wrap items-center gap-3"><div className="relative min-w-64 flex-1"><Search size={16} className="absolute left-3 top-2.5 text-muted-foreground" /><Input aria-label={tr('models.searchLabel')} className="pl-9" placeholder={tr('models.search')} value={query} onChange={e => setQuery(e.target.value)} /></div><select aria-label={tr('models.kindLabel')} className={selectClass} value={kind} onChange={e => setKind(e.target.value)}><option value="model">{tr('models.kindModel')}</option><option value="draft">{tr('models.kindDraft')}</option><option value="projection">{tr('models.kindProjection')}</option><option value="all">{tr('models.kindAll')}</option></select><Button variant="outline" onClick={() => setShowRoots(!showRoots)}>{tr('models.roots')}</Button><Button disabled={busy} variant="outline" onClick={() => act(async () => { await refreshCatalog(true) })}><RefreshCw size={15} />{tr('models.rescan')}</Button></div>
@@ -170,8 +180,9 @@ export default function StrixLlamaPage({ view }: { view: View }) {
           <h2 className="mb-5 font-medium">{tr('config.speculative.title')}</h2>
           <label className="flex items-center justify-between gap-4 text-sm"><span className="font-medium">{tr('config.speculative.mtp')}</span><Switch id="mtp" checked={profile.mtp} disabled={!qsaSupported} onCheckedChange={v => field('mtp', v)} /></label>
           {!qsaSupported && <p className="mt-2 text-xs text-muted-foreground">{tr('config.speculative.mtpUnsupported')}</p>}
+          {qsaSupported && companions && !companions.draft && <p className="mt-2 text-xs text-amber-500">{tr('config.speculative.noDraft')}</p>}
           <label className="mt-4 block text-sm">{tr('config.speculative.draftModel')}<select className={`${selectClass} mt-2 w-full`} value={profile.draft} onChange={e => field('draft', e.target.value)} disabled={!profile.mtp}>{/* a saved draft outside the scanned directories would otherwise render as whichever option comes first */}{profile.draft && !catalog?.models.some(m => m.role === 'draft' && m.path === profile.draft) && <option value={profile.draft}>{profile.draft.split(/[\\/]/).pop()} — {tr('config.speculative.draftMissing')}</option>}{catalog?.models.filter(m => m.role === 'draft').map(m => <option key={m.id} value={m.path}>{m.filename}</option>)}</select></label>
-          <p className="mt-2 text-xs text-muted-foreground">{tr('config.speculative.draftHelp')}</p>
+          {companions?.draft && !companions.draft_head && <p className="mt-2 text-xs text-muted-foreground">{tr('config.speculative.draftHelp')}</p>}
           <div className="mt-5 grid grid-cols-2 gap-5">
             {numeric(tr('config.speculative.draftMax'), 'draft_max', tr('config.speculative.draftMaxHelp'), 1, 8)}
             {numeric(tr('config.speculative.draftMin'), 'draft_min', tr('config.speculative.draftMinHelp'), 0, 1, 0.05)}
@@ -180,6 +191,7 @@ export default function StrixLlamaPage({ view }: { view: View }) {
           <label className="flex items-center justify-between gap-4 text-sm"><span className="font-medium">{tr('config.vision.toggle')}</span><Switch id="vision" checked={!!profile.vision} onCheckedChange={v => field('vision', v)} /></label>
           <p className="mt-2 text-xs text-muted-foreground">{tr('config.vision.help')}</p>
           <p className="mt-2 text-xs text-muted-foreground">{tr('config.vision.cost')}</p>
+          {companions && !companions.mmproj && !profile.mmproj && <p className="mt-2 text-xs text-amber-500">{tr('config.vision.noProjector')}</p>}
           {catalog?.models.some(m => m.role === 'projection') && <label className="mt-4 block text-sm">{tr('config.vision.projector')}<select className={`${selectClass} mt-2 w-full`} value={profile.mmproj} onChange={e => field('mmproj', e.target.value)} disabled={!profile.vision}><option value="">{tr('config.vision.projectorAuto')}</option>{catalog?.models.filter(m => m.role === 'projection').map(m => <option key={m.id} value={m.path}>{m.filename}</option>)}</select></label>}
         </section>
       </div>}
@@ -204,6 +216,6 @@ export default function StrixLlamaPage({ view }: { view: View }) {
       </details>}
       <p className="mt-5 text-sm text-muted-foreground">{tr('config.footer')}</p>
     </div>}
-    {view === 'developer' && <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden p-6"><div className="grid grid-cols-3 gap-3"><div className="rounded-lg border p-3 text-sm"><span className="text-xs text-muted-foreground">{tr('developer.process')}</span><div className="mt-1 font-mono">{status?.identity?.pid || '—'}</div></div><div className="rounded-lg border p-3 text-sm"><span className="text-xs text-muted-foreground">{tr('developer.backend')}</span><div className="mt-1">{runtimeName}{status?.identity ? ` · QSA ${runningQsaText}` : ''}</div></div><div className="rounded-lg border p-3 text-sm"><span className="text-xs text-muted-foreground">{tr('developer.state')}</span><div className="mt-1">{stateText(status?.status || 'stopped')}</div></div></div><details className="max-h-40 shrink-0 overflow-auto rounded-lg border p-3 text-xs"><summary className="cursor-pointer text-muted-foreground">{tr('developer.launchParams')}</summary><pre className="mt-3 whitespace-pre-wrap break-all">{status?.command || tr('developer.notStarted')}{status?.runtime_env && `\n\n${Object.entries(status.runtime_env).map(([key, value]) => `${key}=${value}`).join('\n')}`}</pre></details><div className="flex flex-wrap gap-2"><Input aria-label={tr('developer.searchLogsLabel')} className="min-w-40 flex-1" placeholder={tr('developer.searchLogs')} value={logQuery} onChange={e => setLogQuery(e.target.value)} /><select className={selectClass} value={level} onChange={e => setLevel(e.target.value)} aria-label={tr('developer.levelLabel')}><option value="all">{tr('developer.levelAll')}</option><option value="warning">{tr('developer.levelWarning')}</option><option value="error">{tr('developer.levelError')}</option></select><Button variant="outline" onClick={() => setPaused(!paused)}>{paused ? tr('developer.resume') : tr('developer.pause')}</Button><Button variant="outline" onClick={() => { void navigator.clipboard.writeText(visibleLogs.join('\n')).catch(e => setError(String(e))) }}><Copy size={14} />{tr('developer.copy')}</Button><Button variant="outline" onClick={() => { const url=URL.createObjectURL(new Blob([visibleLogs.join('\n')],{type:'text/plain;charset=utf-8'})); const a=document.createElement('a');a.href=url;a.download='strixllama-developer.log';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000) }}><Download size={14} />{tr('developer.export')}</Button></div><pre ref={logBox} tabIndex={0} role="log" aria-label={tr('developer.logLabel')} aria-live="off" onScroll={e => { const box = e.currentTarget; setFollow(box.scrollHeight - box.clientHeight - box.scrollTop < 24) }} className="strixllama-logs min-h-0 min-w-0 flex-1 rounded-xl border bg-zinc-950 p-4 font-mono text-xs leading-5 text-zinc-300">{visibleLogs.length && logText ? visibleLogs.map((l,i) => <div key={i} className={/\bE\b|ERROR/i.test(l) ? 'text-red-400' : /\bW\b|WARN/i.test(l) ? 'text-amber-400' : /tokens per second|acceptance|tg =/.test(l) ? 'text-emerald-400' : ''}>{l || ' '}</div>) : tr('developer.waiting')}</pre><div className="flex justify-between text-xs text-muted-foreground"><span className="truncate pr-4">{logCursor.current.file}</span><label className="flex shrink-0 items-center gap-2"><input type="checkbox" checked={follow} onChange={e => setFollow(e.target.checked)} />{tr('developer.autoscroll')}</label></div></div>}
+    {view === 'developer' && <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden p-6"><div className="grid grid-cols-3 gap-3"><div className="rounded-lg border p-3 text-sm"><span className="text-xs text-muted-foreground">{tr('developer.process')}</span><div className="mt-1 font-mono">{status?.identity?.pid || '—'}</div></div><div className="rounded-lg border p-3 text-sm"><span className="text-xs text-muted-foreground">{tr('developer.backend')}</span><div className="mt-1">{runtimeName}{status?.identity ? ` · QSA ${runningQsaText}` : ''}</div></div><div className="rounded-lg border p-3 text-sm"><span className="text-xs text-muted-foreground">{tr('developer.state')}</span><div className="mt-1">{stateText(status?.status || 'stopped')}</div></div></div><details className="max-h-40 shrink-0 overflow-auto rounded-lg border p-3 text-xs"><summary className="cursor-pointer text-muted-foreground">{tr('developer.launchParams')}</summary><pre className="mt-3 whitespace-pre-wrap break-all">{status?.command || tr('developer.notStarted')}{status?.runtime_env && `\n\n${Object.entries(status.runtime_env).map(([key, value]) => `${key}=${value}`).join('\n')}`}</pre></details><div className="flex flex-wrap gap-2"><Input aria-label={tr('developer.searchLogsLabel')} className="min-w-40 flex-1" placeholder={tr('developer.searchLogs')} value={logQuery} onChange={e => setLogQuery(e.target.value)} /><select className={selectClass} value={level} onChange={e => setLevel(e.target.value)} aria-label={tr('developer.levelLabel')}><option value="all">{tr('developer.levelAll')}</option><option value="warning">{tr('developer.levelWarning')}</option><option value="error">{tr('developer.levelError')}</option></select><Button variant="outline" onClick={() => setPaused(!paused)}>{paused ? tr('developer.resume') : tr('developer.pause')}</Button><Button variant="outline" onClick={() => { void navigator.clipboard.writeText(visibleLogs.join('\n')).catch(e => setError(describeError(e, tr))) }}><Copy size={14} />{tr('developer.copy')}</Button><Button variant="outline" onClick={() => { const url=URL.createObjectURL(new Blob([visibleLogs.join('\n')],{type:'text/plain;charset=utf-8'})); const a=document.createElement('a');a.href=url;a.download='strixllama-developer.log';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000) }}><Download size={14} />{tr('developer.export')}</Button></div><pre ref={logBox} tabIndex={0} role="log" aria-label={tr('developer.logLabel')} aria-live="off" onScroll={e => { const box = e.currentTarget; setFollow(box.scrollHeight - box.clientHeight - box.scrollTop < 24) }} className="strixllama-logs min-h-0 min-w-0 flex-1 rounded-xl border bg-zinc-950 p-4 font-mono text-xs leading-5 text-zinc-300">{visibleLogs.length && logText ? visibleLogs.map((l,i) => <div key={i} className={/\bE\b|ERROR/i.test(l) ? 'text-red-400' : /\bW\b|WARN/i.test(l) ? 'text-amber-400' : /tokens per second|acceptance|tg =/.test(l) ? 'text-emerald-400' : ''}>{l || ' '}</div>) : tr('developer.waiting')}</pre><div className="flex justify-between text-xs text-muted-foreground"><span className="truncate pr-4">{logCursor.current.file}</span><label className="flex shrink-0 items-center gap-2"><input type="checkbox" checked={follow} onChange={e => setFollow(e.target.checked)} />{tr('developer.autoscroll')}</label></div></div>}
   </div>
 }

@@ -54,11 +54,18 @@ All five come from one Hugging Face repository,
 | 5 | `mmproj-F16.gguf` | 904 MB | the vision projector: image input |
 
 **Why exactly these.** Every number this project publishes was measured on the `UD-IQ4_XS` quant;
-other quants of the same model load, but nothing here is tuned or verified for them. The draft and
-the projector are both **on by default**, and a load refuses to start while one of them is switched
-on and its file is missing — so either download all five, or turn *MTP draft verification* or
-*Image input* off on the Configuration page before loading. (`mtp-…-shared-Q8_0.gguf` works in place
-of file 4; the two are within 1% of each other.)
+other quants of the same model load, but nothing here is tuned or verified for them. Files 1–3 are
+the model and are required. Files 4 and 5 are optional: the draft and the projector are switched on
+automatically when they are in the folder and left off when they are not, and the Configuration
+page says which of the two it did not find. Without the draft, decode is about 40% slower.
+(`mtp-…-shared-Q8_0.gguf` works in place of file 4; the two are within 1% of each other.)
+
+**One more, optional: the draft head** — `mtp-Qwen3.8-Flash-Next-head-iq4_xs.gguf`, 349 MB, from
+this project's [releases page](https://github.com/rulith-dev/strixllama/releases). Put it in the
+same folder as file 4. On the next rescan the app combines the two into
+`mtp-Qwen3.8-Flash-Next-shared-Q4_K_M-head-iq4_xs.gguf` (a few seconds, once) and prefers it: decode
+is 5% faster on English and 9% on Chinese with the same acceptance rate, which is the configuration
+the numbers below were measured with. See [section 5](#5-optional-the-faster-draft-head-5-9-decode).
 
 ### Downloading
 
@@ -140,18 +147,27 @@ The decode figures above were measured with a draft file that carries its own IQ
 projection instead of borrowing the model's; it is 5% faster on English and 9% on Chinese, with the
 same acceptance rate. Everything else on this page works without it.
 
-Making that file currently needs a source checkout with the toolchain built — the installer does not
-carry `llama-quantize` or numpy. The recipe is in [install.md, section 5](install.md#5-model-files).
-Once `mtp-Qwen3.8-Flash-Next-shared-Q4_K_M-head-iq4_xs.gguf` sits in the model folder, press
-**Rescan** and it is preferred automatically. A downloadable version is planned for a coming release.
+Unsloth's `shared-*` drafts have no output projection of their own: every draft step streams the
+model's 521 MB one. The projection is a single tensor, so it is shipped on its own —
+`mtp-Qwen3.8-Flash-Next-head-iq4_xs.gguf`, 349 MB, on the
+[releases page](https://github.com/rulith-dev/strixllama/releases). Download it into the model's
+folder, next to file 4, and press **Rescan** on the Models page. The app writes
+`mtp-Qwen3.8-Flash-Next-shared-Q4_K_M-head-iq4_xs.gguf` beside them (a byte-for-byte splice of the
+two files, a few seconds, done once; it is the only file the app ever writes into a model folder),
+reports it in a notice, and every profile that has not chosen a draft by hand uses it from then on.
+The Configuration page's draft list shows all three.
+
+Building the head yourself instead needs a source checkout with the toolchain:
+[install.md, section 5](install.md#5-model-files).
 
 ## If something goes wrong
 
 - **The Models page is empty.** Check *Model directories*: only `.gguf` files under a registered
   directory are listed, and a split model is listed by its `-00001-of-` shard. Press *Rescan*.
-- **Load model fails at once with a message about the draft or the projector.** File 4 or 5 is not
-  in the model's folder (or is named differently). Add it and *Rescan*, or turn the corresponding
-  switch off on the Configuration page.
+- **MTP or image input is off and the Configuration page says it did not find the file.** File 4 or
+  5 is not in the model's folder (or is named differently). Add it and *Rescan*; the switch turns
+  itself on. A load only refuses to start over these when a saved profile has the switch on by hand
+  and the file has since gone.
 - **The load starts, then dies.** Read the Developer log. The usual causes are a GPU other than
   gfx1151, or a carve too small for the context length (the app retries in shared memory once and
   says so).
@@ -160,4 +176,3 @@ Once `mtp-Qwen3.8-Flash-Next-shared-Q4_K_M-head-iq4_xs.gguf` sits in the model f
 - **Where things are.** The app is in `%LOCALAPPDATA%\Strix Llama`; the manager's settings, model
   catalog and last server log are in `runtime\config\jan\` under it; chats are in
   `%APPDATA%\strixllama\data`. Uninstalling removes the app folder including those settings; chats stay.
-- The manager's error messages are in Chinese at the moment. That is known and being changed.
