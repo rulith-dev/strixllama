@@ -191,7 +191,8 @@ of its own:
 python integrations/jan/apply.py <path to a Jan v0.8.4 checkout>
 ```
 
-Then, in that checkout, `yarn workspace @janhq/assistant-extension build`, `npx vite build` inside
+If the checkout was moved after `yarn install` (yarn links workspace packages with absolute
+junctions), run `python tools/relink_jan_tree.py` first. Then, in that checkout, `yarn workspace @janhq/assistant-extension build`, `npx vite build` inside
 `web-app/` once (it regenerates the route tree that `tsc` checks, which does not yet know the new
 pages), and `yarn build:web && yarn tauri build`. If `dist/runtime` exists (section "The short
 way"), apply.py stages it as a resource and the installer carries it.
