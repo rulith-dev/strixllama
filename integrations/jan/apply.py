@@ -217,6 +217,25 @@ def brand(keep_data_dir=False):
         cargo = JAN / 'src-tauri/Cargo.toml'
         replace_once(cargo, '[package]\nname = "Jan"\n', '[package]\nname = "strixllama"\n')
         replace_once(cargo, 'default-run = "Jan"\n', 'default-run = "strixllama"\n')
+        # No jan-cli: it serves Jan's engine, brand() already stops installing it, and Tauri
+        # bundles every [[bin]] of the package - so an unbuilt one fails the bundle outright.
+        cli_bin = '[[bin]]\nname = "jan-cli"\npath = "src/bin/jan-cli.rs"\nrequired-features = ["cli"]\n'
+        text = cargo.read_text(encoding='utf-8')
+        if cli_bin in text:
+            cargo.write_text(text.replace(cli_bin, '', 1), encoding='utf-8', newline='\n')
+        # ...and without the explicit target cargo would auto-discover src/bin/jan-cli.rs and try
+        # to compile it without its feature. Discovery off covers src/main.rs too, so the one
+        # binary is declared explicitly.
+        replace_once(cargo, '[package]\nname = "strixllama"\n', '[package]\nname = "strixllama"\nautobins = false\n')
+        replace_once(cargo, '[lib]\nname = "app_lib"\n',
+                     '[[bin]]\nname = "strixllama"\npath = "src/main.rs"\n\n[lib]\nname = "app_lib"\n')
+        # The Tauri CLI has its own discovery too: it bundles every file under src/bin whatever
+        # Cargo.toml says, and fails when the binary was never built. The source goes.
+        cli_src = JAN / 'src-tauri/src/bin/jan-cli.rs'
+        if cli_src.is_file():
+            cli_src.unlink()
+            if not any(cli_src.parent.iterdir()):
+                cli_src.parent.rmdir()
         # The bundle-identifier constant is only used to look for a legacy settings file to
         # migrate, and the migration deletes the file it copies. Pointed at Jan's directory, a
         # first run would carry off - and remove - an installed Jan's settings.
@@ -245,7 +264,7 @@ def brand(keep_data_dir=False):
     resources = bundle.get('resources') or []
     if isinstance(resources, list):
         resources = {r: r for r in resources}
-    resources = {k: v for k, v in resources.items() if not v.startswith('runtime/')}
+    resources = {k: v for k, v in resources.items() if not v.startswith('runtime/') and 'jan-cli' not in k}
     staged = JAN / 'src-tauri' / 'runtime'
     if (runtime / 'BUNDLE.json').is_file():
         # Copied into the Tauri project and mapped as a directory: Tauri walks a directory into
@@ -302,7 +321,7 @@ def brand(keep_data_dir=False):
         if presources is not None:
             if isinstance(presources, list):
                 presources = {r: r for r in presources}
-            presources = {k: v for k, v in presources.items() if v != 'runtime/'}
+            presources = {k: v for k, v in presources.items() if v != 'runtime/' and 'jan-cli' not in k}
             if 'runtime' in resources:
                 presources['runtime'] = 'runtime/'
             if presources != pdata['bundle'].get('resources'):
