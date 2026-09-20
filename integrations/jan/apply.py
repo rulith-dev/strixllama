@@ -222,6 +222,22 @@ def brand(keep_data_dir=False):
     if bundle.get('createUpdaterArtifacts'):
         bundle['createUpdaterArtifacts'] = False
         data['bundle'] = bundle
+    # The runtime bundle, when one has been made (tools/make_runtime_bundle.py): the server, the
+    # ROCm DLLs it needs, the manager and an embedded Python, installed under <app>/runtime so a
+    # user needs nothing but the model files. Without one, the build is a development build that
+    # runs the repository it was compiled in.
+    runtime = ROOT / 'dist' / 'runtime'
+    resources = bundle.get('resources') or []
+    if isinstance(resources, list):
+        resources = {r: r for r in resources}
+    resources = {k: v for k, v in resources.items() if not v.startswith('runtime/')}
+    if (runtime / 'BUNDLE.json').is_file():
+        import os
+        source = os.path.relpath(runtime, JAN / 'src-tauri').replace('\\', '/')
+        resources[source + '/**/*'] = 'runtime/'
+        print('  brand: runtime bundle from %s' % runtime)
+    bundle['resources'] = resources
+    data['bundle'] = bundle
     # ...and the plugin that reads it: the call is `?`-propagated inside setup(), so an updater
     # with no configuration would stop the application from starting at all.
     replace_once(JAN / 'src-tauri/src/lib.rs',

@@ -1,7 +1,16 @@
 # Installing and running it
 
-Four things have to be in place: the machine set up correctly, a toolchain, a build, and the model
-files. The build is the easy part.
+**The short way** is the installer from the [releases page](https://github.com/rulith-dev/strixllama/releases):
+`strixllama_<version>_x64-setup.exe` carries the desktop app and, under `runtime/`, everything it
+runs — `llama-server` built from the pinned fork, the eight ROCm DLLs it imports plus the gfx1151
+kernel libraries, the Visual C++ and OpenMP runtimes, the manager and an embedded Python. On a
+machine set up as in section 1, with the model files from section 5 already in LM Studio's folder,
+it needs nothing else: install, open, load the model from the Models page. The bundle is made by
+`tools/make_runtime_bundle.py` from a finished build; `BUNDLE.json` inside it records what went in
+and the upstream commit it came from.
+
+The rest of this page is the long way, for building it yourself. Four things have to be in place:
+the machine set up correctly, a toolchain, a build, and the model files. The build is the easy part.
 
 ## 1. The machine
 

@@ -228,6 +228,26 @@ class ManagerTests(unittest.TestCase):
             m.handle('stop',{})
             self.assertNotIn('exited',m.read_json(m.DATA/'process.json',{}))
             self.assertNotIn('shared memory=on',Path(second['log']).read_text())
+    def test_installed_layout_needs_no_sdk_directory_and_no_path_entry(self):
+        # tools/make_runtime_bundle.py puts the ROCm DLLs beside llama-server
+        with patch.object(m,'ROCM_BIN',self.root/'nowhere'):
+            self.assertFalse(m.runtime_available())
+            (m.RUNTIME.parent/'amdhip64_7.dll').write_bytes(b'')
+            self.assertTrue(m.runtime_available())
+            env=m.runtime_environment(m.validate_profile({'mtp':False},self.model))
+            self.assertNotIn('nowhere',env['PATH'])
+    def test_draft_falls_back_to_the_family_s_shared_head_beside_the_model(self):
+        # an installed copy has no models/ of ours; Unsloth's mtp-*.gguf sits next to the model
+        shared=self.file.with_name('mtp-'+m.MODEL_FAMILY+'-shared-Q4_K_M.gguf');gguf(shared)
+        other=self.file.with_name('mtp-Other-Model-shared-Q4_K_M.gguf');gguf(other)
+        m.catalog(True)
+        with patch.object(m,'DEFAULT_DRAFT',self.root/'models'/'missing-head.gguf'):
+            # the catalog stores resolved paths; the temp dir may be an 8.3 short name
+            self.assertEqual(Path(m.family_draft()).resolve(),shared.resolve())
+            model={**self.model,'path':str(self.file.with_name(m.MODEL_FAMILY+'-UD-IQ4_XS.gguf'))}
+            self.assertEqual(Path(m.profile(model)['draft']).resolve(),shared.resolve())
+            shared.unlink();m.catalog(True)
+            with self.assertRaisesRegex(ValueError,'草稿'):m.validate_profile({'mtp':True},model)
     def test_saving_configuration_does_not_start_a_process(self):
         m.catalog(True)
         model=m.catalog()['models'][0]

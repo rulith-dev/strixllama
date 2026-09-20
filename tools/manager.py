@@ -288,9 +288,22 @@ def model_by_id(model_id):
     raise ValueError('模型不在列表中，请重新扫描')
 
 
+def family_draft():
+    """The draft head to use when the repository's own is not there: on an installed copy there is
+    no models/ directory of ours, but Unsloth's shared-Q4_K_M MTP file ships beside the model, and it
+    drafts the same tokens (see DEFAULT_DRAFT) at under 1% of the pass. Ours is preferred when both
+    are present."""
+    if DEFAULT_DRAFT.is_file():
+        return str(DEFAULT_DRAFT)
+    drafts = [m['path'] for m in catalog()['models'] if m.get('role') == 'draft' and MODEL_FAMILY in m['filename'] and not m.get('error')]
+    drafts.sort(key=lambda p: ('head-iq4_xs' not in p, 'Q4_K_M' not in p, p))
+    return drafts[0] if drafts else str(DEFAULT_DRAFT)
+
+
 def profile(model):
     default = dict(DEFAULTS)
     default['mtp'] = MODEL_FAMILY in Path(model['path']).name
+    default['draft'] = family_draft()
     if model.get('context'): default['context'] = min(default['context'], int(model['context']))
     saved = settings()['profiles'].get(model['id'], {})
     # A profile written by an earlier version can carry fields this one no longer has. They are
@@ -333,13 +346,20 @@ def validate_profile(raw, model):
         if cfg['flash_attention'] != 'on': raise ValueError('QSA 优化需要开启 Flash Attention')
     if cfg['mtp']:
         if model['architecture'] != 'qwen4exp': raise ValueError('此第一版只对 qwen4exp 启用 MTP')
-        checked_file(cfg['draft'])
+        try: checked_file(cfg['draft'])
+        except (FileNotFoundError, OSError): raise ValueError('未找到 MTP 草稿模型：把 Unsloth 的 mtp-*.gguf 放到模型旁边，或关闭 MTP')
     return cfg
+
+
+def bundled_rocm():
+    """The installed layout: the ROCm DLLs sit beside llama-server (tools/make_runtime_bundle.py),
+    so Windows finds them without a PATH entry and there is no SDK directory at all."""
+    return (RUNTIME.parent / 'amdhip64_7.dll').is_file()
 
 
 def runtime_available():
     return (RUNTIME.is_file() and (RUNTIME.parent/'ggml-hip.dll').is_file()
-            and ROCM_BIN.is_dir() and (ROCM_BIN/'amdhip64_7.dll').is_file())
+            and (bundled_rocm() or (ROCM_BIN.is_dir() and (ROCM_BIN/'amdhip64_7.dll').is_file())))
 
 
 def selected_runtime(cfg):
@@ -444,7 +464,8 @@ def runtime_environment(cfg, unified=False):
     # read 23% fewer trunk bytes; prefill keeps the Q8_0 originals. No UI control - measured
     # prefill-neutral and 4% on decode for 2.9 GB, and at ctx 262144 it can stop a long prompt loading.
     env['LLAMA_TRUNK_DECODE_Q6K'] = '1' if cfg.get('trunk_decode_q6k', False) else '0'
-    env['PATH'] = str(ROCM_BIN) + os.pathsep + os.environ.get('PATH', '')
+    if not bundled_rocm():
+        env['PATH'] = str(ROCM_BIN) + os.pathsep + os.environ.get('PATH', '')
     return env
 
 
@@ -628,7 +649,7 @@ def launch(m, cfg, unified, notice=None):
               f'{f" (draft ubatch capped to {env['STRIX_SPEC_DRAFT_UBATCH']})" if cfg["mtp"] else ""}; '
               f'n-gram draft={"on (match=24, min=4, max=8)" if cfg["ngram_spec"] else "off"}; '
               f'vision={"on" if cfg["vision"] else "off"}; shared memory={"on" if unified else "off"}; '
-              f'PLE reader=on-direct; rocm={ROCM_BIN}\n')
+              f'PLE reader=on-direct; rocm={"bundled beside the server" if bundled_rocm() else ROCM_BIN}\n')
     with log.open('wb') as f:
         f.write(banner.encode('utf-8'))
         f.flush()

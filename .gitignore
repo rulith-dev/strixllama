@@ -18,3 +18,6 @@ __pycache__/
 
 # measurement corpora: long prose, not ours to redistribute (see NOTICE)
 corpus/
+
+# runtime bundles (tools/make_runtime_bundle.py): release assets, not source
+dist/
