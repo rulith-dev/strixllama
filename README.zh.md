@@ -1,4 +1,4 @@
-# strixllama
+# Strix Llama
 
 在一台 AMD Strix Halo 机器上、在 Windows 下，把 125B 的 MoE 模型跑快。
 

@@ -13,6 +13,13 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
+# The name people see, and the one machines use. The repository, the package, the binary, the
+# provider id and the data directory are the slug; the window, the sidebar, the credits and the
+# installer show the name.
+NAME = 'Strix Llama'
+SLUG = 'strixllama'
+# Ours, not Jan's: the installer's file name, the uninstall entry and Settings › General show it.
+VERSION = '0.1.0'
 ARGS = [a for a in sys.argv[1:] if not a.startswith('-')]
 KEEP_DATA_DIR = '--keep-data-dir' in sys.argv
 JAN = Path(ARGS[0]).resolve() if ARGS else ROOT / 'src/jan'
@@ -196,7 +203,15 @@ def brand(keep_data_dir=False):
 
     conf = JAN / 'src-tauri/tauri.conf.json'
     data = json.loads(conf.read_text(encoding='utf-8'))
-    data['productName'] = 'strixllama'
+    data['productName'] = NAME
+    data['mainBinaryName'] = SLUG      # strixllama.exe, whatever the product is called
+    data['version'] = VERSION
+    # Settings › General reads the web app's package version
+    web_pkg = JAN / 'web-app/package.json'
+    web = json.loads(web_pkg.read_text(encoding='utf-8'))
+    if web.get('version') != VERSION:
+        web['version'] = VERSION
+        web_pkg.write_text(json.dumps(web, indent=2, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
     if not keep_data_dir:
         data['identifier'] = 'dev.rulith.strixllama'
         cargo = JAN / 'src-tauri/Cargo.toml'
@@ -231,10 +246,15 @@ def brand(keep_data_dir=False):
     if isinstance(resources, list):
         resources = {r: r for r in resources}
     resources = {k: v for k, v in resources.items() if not v.startswith('runtime/')}
+    staged = JAN / 'src-tauri' / 'runtime'
     if (runtime / 'BUNDLE.json').is_file():
-        import os
-        source = os.path.relpath(runtime, JAN / 'src-tauri').replace('\\', '/')
-        resources[source + '/**/*'] = 'runtime/'
+        # Copied into the Tauri project and mapped as a directory: Tauri walks a directory into
+        # the target preserving its structure (a glob flattens every match by file name), and a
+        # path that climbs out of the project was silently left out of the bundle.
+        if staged.is_dir():
+            shutil.rmtree(staged)
+        shutil.copytree(runtime, staged)
+        resources['runtime'] = 'runtime/'
         print('  brand: runtime bundle from %s' % runtime)
     bundle['resources'] = resources
     data['bundle'] = bundle
@@ -268,7 +288,7 @@ def brand(keep_data_dir=False):
         changed = False
         for w in windows:
             if w.get('title') == 'Jan':
-                w['title'] = 'strixllama'
+                w['title'] = NAME
                 changed = True
         # One installer. Jan also builds an MSI, which needs the WiX toolset fetched from GitHub
         # at bundle time and adds nothing the NSIS setup does not already do.
@@ -276,6 +296,18 @@ def brand(keep_data_dir=False):
         if isinstance(targets, list) and 'msi' in targets:
             pdata['bundle']['targets'] = [t for t in targets if t != 'msi']
             changed = True
+        # The platform file's own bundle.resources replaces the main one wholesale, so the runtime
+        # bundle has to be declared here too or the installer quietly ships without it.
+        presources = pdata.get('bundle', {}).get('resources')
+        if presources is not None:
+            if isinstance(presources, list):
+                presources = {r: r for r in presources}
+            presources = {k: v for k, v in presources.items() if v != 'runtime/'}
+            if 'runtime' in resources:
+                presources['runtime'] = 'runtime/'
+            if presources != pdata['bundle'].get('resources'):
+                pdata['bundle']['resources'] = presources
+                changed = True
         if not changed:
             continue
         platform.write_text(json.dumps(pdata, indent=2, ensure_ascii=False) + '\n',
@@ -292,22 +324,22 @@ def brand(keep_data_dir=False):
         pkg.write_text(json.dumps(scripts, indent=2, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
 
     html = JAN / 'web-app/index.html'
-    replace_once(html, '<title>Jan</title>', '<title>strixllama</title>')
+    replace_once(html, '<title>Jan</title>', f'<title>{NAME}</title>')
     # The splash: index.html shows /images/jan-logo.png (the waving hand) until the app mounts,
     # and two other places use the same file. One image replaces all three.
     shutil.copyfile(icons / 'icon.png', JAN / 'web-app/public/images/jan-logo.png')
     replace_once(html, '<img src="/images/jan-logo.png" alt="Jan Logo" data-tauri-drag-region />',
-                 '<img src="/images/jan-logo.png" alt="strixllama" data-tauri-drag-region />')
-    replace_once(html, 'Booting up Jan…', 'Starting strixllama…')
+                 f'<img src="/images/jan-logo.png" alt="{NAME}" data-tauri-drag-region />')
+    replace_once(html, 'Booting up Jan…', f'Starting {NAME}…')
     replace_once(html, '        animation: wave 2s ease-in-out 2.5s infinite;\n',
                  '        animation: none;   /* strixllama: an owl does not wave */\n')
     # The name at the top of the sidebar - the native title bar is hidden behind Jan's own window
     # chrome, so this is the name people actually see.
     sidebar = JAN / 'web-app/src/components/left-sidebar/index.tsx'
     replace_once(sidebar, '<span className="ml-2 font-medium font-studio">Jan</span>',
-                 '<span className="ml-2 font-medium font-studio">strixllama</span>')
+                 f'<span className="ml-2 font-medium font-studio">{NAME}</span>')
     replace_once(sidebar, '<span className="mr-2 font-medium font-studio">Jan</span>',
-                 '<span className="mr-2 font-medium font-studio">strixllama</span>')
+                 f'<span className="mr-2 font-medium font-studio">{NAME}</span>')
     # The download tray beside it managed Hub models and engine backends, neither of which this
     # build fetches; models come from the catalog on disk.
     replace_once(sidebar, "              {isLeftPanelOpen && <DownloadManagement />}\n",
@@ -318,9 +350,9 @@ def brand(keep_data_dir=False):
         text = (text.replace("  const { open: isLeftPanelOpen } = useLeftPanel()\n", "", 1)
                     .replace("import { useLeftPanel } from '@/hooks/useLeftPanel'\n", "", 1))
     sidebar.write_text(text, encoding='utf-8', newline='\n')
-    # Jan capitalises a provider it has no title for; the name is a lowercase wordmark.
+    # Jan capitalises a provider it has no title for: give ours its name.
     replace_once(JAN / 'web-app/src/lib/utils.ts', "    case 'llamacpp':\n      return 'Llama.cpp'\n",
-                 "    case 'strixllama':\n      return 'strixllama'\n    case 'llamacpp':\n      return 'Llama.cpp'\n")
+                 f"    case '{SLUG}':\n      return '{NAME}'\n    case 'llamacpp':\n      return 'Llama.cpp'\n")
     # Two cards Jan shows a fresh install: "download Jan V3.5 for your device" fetches a model for
     # Jan's engine, which this build never loads, and the analytics consent asks about telemetry
     # that is not configured (no PostHog key) and would go to Jan's project if it were.
@@ -336,7 +368,7 @@ def brand(keep_data_dir=False):
         text = root.read_text(encoding='utf-8')
         if line in text:
             root.write_text(text.replace(line, '', 1), encoding='utf-8', newline='\n')
-    print('  brand: %d icons, productName=strixllama, identifier=%s' % (copied, data['identifier']))
+    print('  brand: %d icons, productName=%s, binary=%s, identifier=%s' % (copied, NAME, SLUG, data['identifier']))
 
 
 import re
@@ -345,11 +377,11 @@ import re
 # straight into the word, and \w counts their characters as word characters.
 PRODUCT_WORD = re.compile(r'(?<![A-Za-z])Jan(?![A-Za-z])')
 CREDITS = {
-    'en': ("strixllama is a build of Jan by Menlo Research (Apache-2.0), with its own inference "
+    'en': (f"{NAME} is a build of Jan by Menlo Research (Apache-2.0), with its own inference "
            "runtime and management pages in place of Jan's engines and providers.",
            "It runs on a pwilkin branch of llama.cpp, TheRock ROCm and Tauri. NOTICE.md in the "
            "repository lists every licence."),
-    'zh-CN': ("strixllama 基于 Menlo Research 的 Jan（Apache-2.0）构建，用自己的推理运行时和管理页面"
+    'zh-CN': (f"{NAME} 基于 Menlo Research 的 Jan（Apache-2.0）构建，用自己的推理运行时和管理页面"
               "取代了 Jan 的引擎与模型提供商。",
               "底层依赖 llama.cpp 的 pwilkin 分支、TheRock ROCm 与 Tauri。完整许可见仓库中的 NOTICE.md。"),
 }
@@ -372,7 +404,7 @@ def brand_text():
     for path in (JAN / 'extensions/assistant-extension/src/index.ts',
                  JAN / 'web-app/src/hooks/useAssistant.ts'):
         text = path.read_text(encoding='utf-8')
-        new = sentence.sub(description, text.replace("name: 'Jan',", "name: 'strixllama',", 1)
+        new = sentence.sub(description, text.replace("name: 'Jan',", f"name: '{NAME}',", 1)
                            .replace("avatar: '👋',", "avatar: '🦉',", 1))
         if new != text:
             path.write_text(new, encoding='utf-8', newline='\n')
@@ -388,7 +420,7 @@ def brand_text():
       // strixllama: an assistant written by a Jan build keeps Jan's name on disk
       assistants.forEach((a) => {
         if (a.id === 'jan' && a.name === 'Jan') {
-          a.name = 'strixllama'
+          a.name = '""" + NAME + """'
           a.description = '""" + description + """'
         }
       })
@@ -434,7 +466,7 @@ def brand_text():
         if isinstance(node, list):
             return [walk(x, locale) for x in node]
         if isinstance(node, str):
-            return PRODUCT_WORD.sub('strixllama', node)
+            return PRODUCT_WORD.sub(NAME, node)
         return node
     for path in sorted((JAN / 'web-app/src/locales').glob('*/*.json')):
         if path.name == 'strixllama.json':

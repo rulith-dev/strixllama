@@ -1,9 +1,9 @@
 {
-  "title": "strixllama",
+  "title": "Strix Llama",
   "subtitle": "Local model management",
   "unload": "Unload model",
   "backendHint": "Selected in config/jan/backend.json. Reload the model to switch.",
-  "nav": "strixllama management",
+  "nav": "Strix Llama management",
   "failure": "The last load failed: {{reason}}",
   "state": {
     "ready": "Running",

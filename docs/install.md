@@ -144,19 +144,13 @@ python tools/manager.py <<< '{"op":"stop"}'
 
 The server is then an ordinary OpenAI-compatible endpoint on `http://127.0.0.1:8080/v1`.
 
-**The defaults are conservative, not the measured configuration.** `DEFAULTS` ships context 32768,
-batch 2048, ubatch 512 so a first start succeeds on a smaller carve. The numbers in
-[results.md](results.md) come from context 262144, batch and ubatch 8192, flash attention on, sparse
-attention on, one slot:
-
-```bash
-python tools/manager.py <<< '{"op":"save","data":{"id":"<model-id>","profile":{
-  "context":262144,"batch":8192,"ubatch":8192,"flash_attention":"on","qsa":true,
-  "mtp":true,"draft_max":3,"parallel":1,"vision":true}}}'
-```
-
-Sparse attention has to stay on above ~64K: dense attention runs out of memory there, and it is
-slower below it.
+**The defaults are the measured configuration.** A first load runs with context 262144, batch and
+ubatch 8192, flash attention on, sparse attention and MTP on for this model, one slot — the
+settings every number in [results.md](results.md) was measured with — so nothing has to be set to
+get the claimed performance. On a carve this does not fit, the load falls back to shared memory
+(next section) rather than failing; a smaller context is the setting to change if that is too
+slow. Sparse attention has to stay on above ~64K: dense attention runs out of memory there, and it
+is slower below it.
 
 ### Shared GPU memory is decided per load, not by a switch
 
@@ -188,11 +182,17 @@ The template accepts **only** `low`, `medium` and `xhigh`, raising on anything e
 a second name for one of these. A single request can still override the profile with
 `chat_template_kwargs`.
 
-Optional — three management pages inside a [Jan](https://github.com/menloresearch/jan) checkout:
+Optional — the desktop app: Jan v0.8.4 with the three management pages, our name and no engine
+of its own:
 
 ```bash
 python integrations/jan/apply.py <path to a Jan v0.8.4 checkout>
 ```
+
+Then, in that checkout, `yarn workspace @janhq/assistant-extension build`, `npx vite build` inside
+`web-app/` once (it regenerates the route tree that `tsc` checks, which does not yet know the new
+pages), and `yarn build:web && yarn tauri build`. If `dist/runtime` exists (section "The short
+way"), apply.py stages it as a resource and the installer carries it.
 
 ## 7. Check it works
 

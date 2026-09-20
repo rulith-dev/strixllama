@@ -1,4 +1,4 @@
-# strixllama
+# Strix Llama
 
 Serving a 125B mixture-of-experts model fast on one AMD Strix Halo machine, on Windows.
 

@@ -257,10 +257,11 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(m.profile(model)['context'],8192)
     def test_flash_attention_survives_save_and_reaches_launch_arguments(self):
         model=m.catalog(True)['models'][0]
-        self.assertEqual(m.profile(model)['flash_attention'],'off')
+        self.assertEqual(m.profile(model)['flash_attention'],'on')
         with patch.object(m,'state',return_value={}),patch.object(m.subprocess,'Popen') as popen:
             for mode in ('on','off'):
-                m.handle('save',{'id':model['id'],'profile':{'mtp':False,'flash_attention':mode}})
+                # sparse attention needs flash attention, so turning the latter off means both
+                m.handle('save',{'id':model['id'],'profile':{'mtp':False,'flash_attention':mode,'qsa':mode=='on'}})
                 cfg=m.validate_profile(m.profile(model),model)
                 args=m.argv(model,cfg)
                 self.assertEqual(args[args.index('-fa')+1],mode)
@@ -292,12 +293,25 @@ class ManagerTests(unittest.TestCase):
             identity.assert_called_with(123,True,ident)
         self.assertNotIn('identity',m.read_json(m.DATA/'process.json',{}))
 
-    def test_qsa_legacy_profile_defaults_off(self):
+    def test_defaults_are_the_measured_configuration_per_architecture(self):
+        model=m.catalog(True)['models'][0]
+        cfg=m.profile(model)
+        # the numbers in docs/results.md, so a first load performs as claimed
+        self.assertEqual((cfg['context'],cfg['batch'],cfg['ubatch'],cfg['flash_attention']),(32768,8192,8192,'on'))  # context clamped to the model's declared length
+        self.assertTrue(cfg['qsa'])
+        # MTP follows the model family in the file name, since the draft head is that family's
+        family={**model,'path':str(self.file.with_name(m.MODEL_FAMILY+'-UD-IQ4_XS.gguf'))}
+        self.assertTrue(m.profile(family)['mtp']);self.assertFalse(cfg['mtp'])
+        # sparse attention is qwen4exp's; another architecture must not be handed a profile that fails validation
+        other={**model,'architecture':'qwen35moe','path':str(self.file.with_name('Other-35B-Q4.gguf'))}
+        self.assertFalse(m.profile(other)['qsa']);self.assertFalse(m.profile(other)['mtp'])
+        m.validate_profile(m.profile(other),other)
+    def test_qsa_legacy_profile_keeps_its_saved_fields(self):
         model=m.catalog(True)['models'][0]
         settings=m.settings();settings['profiles'][model['id']]={'context':16384,'flash_attention':'on'}
         m.atomic_json(m.DATA/'settings.json',settings)
         cfg=m.validate_profile({},model)
-        self.assertFalse(cfg['qsa'])
+        self.assertTrue(cfg['qsa'])
         self.assertEqual(m.selected_runtime(cfg),m.RUNTIME)
         self.assertEqual(cfg['context'],16384)
     def test_qsa_invalid_dependencies_rejected(self):
@@ -321,7 +335,7 @@ class ManagerTests(unittest.TestCase):
             m.handle('save',{'id':model['id'],'profile':{'qsa':True}})
             popen.assert_not_called()
             cfg=m.profile(model)
-            self.assertEqual({**cfg,'qsa':False},baseline)
+            self.assertEqual({**cfg,'qsa':baseline['qsa']},baseline)
             result=m.handle('start',{'id':model['id']})
             args=popen.call_args.args[0];env=popen.call_args.kwargs['env']
             self.assertEqual(args[0],str(m.RUNTIME))

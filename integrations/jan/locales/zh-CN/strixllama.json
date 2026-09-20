@@ -1,9 +1,9 @@
 {
-  "title": "strixllama",
+  "title": "Strix Llama",
   "subtitle": "本地模型管理",
   "unload": "卸载模型",
   "backendHint": "由 config/jan/backend.json 选择，重新加载模型后切换。",
-  "nav": "strixllama 管理",
+  "nav": "Strix Llama 管理",
   "failure": "上次加载失败：{{reason}}",
   "state": {
     "ready": "运行中",

@@ -84,7 +84,11 @@ THINKING = {'off': None, 'low': 'low', 'medium': 'medium', 'high': 'xhigh'}
 PORT = 8080
 HIDDEN = 0x08000000 if os.name == 'nt' else 0
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-DEFAULTS = dict(context=32768, gpu_layers=999, threads=16, batch=2048, ubatch=512,
+# The defaults are the measured configuration (docs/results.md), not a cautious one: context
+# 262144, batch and ubatch 8192, flash attention on, and - per model, in profile() - sparse
+# attention and MTP. A carve this does not fit is handled by the shared-memory fallback
+# (unified_memory), so a first load succeeds either way and a fitting one is as fast as claimed.
+DEFAULTS = dict(context=262144, gpu_layers=999, threads=16, batch=8192, ubatch=8192,
                 # draft_max=3: swept again 2026-09-19 with the cheaper draft head, at 85K on real prose.
                 # A fourth position costs 18.5 ms of an 86 ms pass (7.4 draft step + 11.2 target verify,
                 # the latter being one more token's worth of expert bandwidth) and returned 0.56 tokens
@@ -110,7 +114,7 @@ DEFAULTS = dict(context=32768, gpu_layers=999, threads=16, batch=2048, ubatch=51
                 # 'high' is an alias the template itself folds into xhigh, and 'medium' injects
                 # nothing at all, i.e. the model's own default behaviour. Four levels is what this
                 # model actually has; offering five would be two of them doing the same thing.
-                ngram_spec=False, kv='f16', flash_attention='off', thinking='off',
+                ngram_spec=False, kv='f16', flash_attention='on', thinking='off',
                 # shared_vram: force GGML_HIP_ENABLE_UNIFIED_MEMORY on. False means automatic, see
                 # unified_memory(): a load first tries the dedicated carve alone, which is faster
                 # and far steadier, and falls back to shared memory only when that runs out.
@@ -304,6 +308,8 @@ def profile(model):
     default = dict(DEFAULTS)
     default['mtp'] = MODEL_FAMILY in Path(model['path']).name
     default['draft'] = family_draft()
+    # sparse attention is this architecture's, and above 64K context it is what makes the load fit
+    default['qsa'] = model.get('architecture') == 'qwen4exp'
     if model.get('context'): default['context'] = min(default['context'], int(model['context']))
     saved = settings()['profiles'].get(model['id'], {})
     # A profile written by an earlier version can carry fields this one no longer has. They are
