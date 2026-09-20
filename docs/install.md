@@ -86,6 +86,7 @@ python bootstrap/bootstrap.py --fetch --patch --build
 ```
 
 - `--fetch` clones `pwilkin/llama.cpp` at the pinned revision into `src/llama.cpp`.
+  The result of `--fetch --patch` is what the `strixllama` branch of [rulith-dev/llama.cpp](https://github.com/rulith-dev/llama.cpp/tree/strixllama) holds as a single commit, if you would rather read the delta than replay it.
 - `--patch` overlays `patches/iq3s-kernel/` and runs the scripts in order.
 - `--build` configures and compiles, then copies the runtime into `bin/hip-rocm101/`.
 
