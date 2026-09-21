@@ -400,5 +400,38 @@
    "A/B short context": "np1 MTP 27.1/27.6/27.1 -> 26.3/27.4/26.9 ms/token; np4 MTP 61.3/60.5 -> 58.6/60.5 tok/s aggregate: unchanged"
   },
   "what_is_left": "per target graph at 4 x 35K (graphs off): the gather GET_ROWS 6.6 ms (16 x 2304 rows x K and V) and the FLASH_ATTN_EXT 6.5 ms (one query per sequence slab, tile kernel) against 3.4 + 1.2 at short context; the rest of the depth cost is the routed experts, which the four different conversations touch more of than four copies of one prompt do (MUL_MAT_ID 26.6 + 15.6 vs 18.2 + 10.3 ms). The GDN cost per sequence (7.5 ms at 4 streams) and the draft context KV are unchanged. Images with more than one slot need the ranked enumeration to work on a multi-sequence cache."
+ },
+ "pass_budget_20260921": {
+  "question": "why two streams give 1.3-1.4x and not 2x: where a pass goes, and which of it is bytes",
+  "method": "tmp/two_stream_budget.py (STRIX_SPEC_TIMING / STRIX_DECODE_TIMING, graphs on, -np 2 and -np 4 at ctx 262144, short prompts and ~12K); tmp/bench_tiny_tax.py (llama-bench -p 4,8,16,32 -n 0: the bare target graph, graphs on / fusion off / graphs off); STRIX_NODE_TIMING kinds at p=4 and p=16; test-backend-ops STRIX_DENSE_PERF (8 distinct matrices per case, past the 32 MB MALL) and STRIX_SMALL_PERF",
+  "pass_ms_steady_state": {
+   "1 stream": "pass 78-90 = draft 10-11 + verify 64-70 + process 1.5 + sample 0.6 + other 1.5-14 (4 tokens verified, ~3.1 accepted)",
+   "2 streams": "pass 128-132 = draft 11.4-11.9 + verify 103-107 + process 1.8 + sample 1.1 + other 10 (7.7 tokens verified)",
+   "4 streams": "pass 212-224 = draft 13.5-13.8 + verify 165-169 + process 3.2 + sample 2-3 + other 28-35 (15 tokens verified)",
+   "drafts": "already batched across slots (one common_speculative_draft call per pass): +1.2 ms for the second stream, +3.5 for four"
+  },
+  "bare_target_graph_ms_per_pass": {
+   "graphs on": "4: 68.9, 8: 96.6, 16: 139.8, 32: 202.1",
+   "graphs off": "4: 63.6, 8: 94.3, 16: 125.5, 32: 203.9 - HIP graphs buy nothing here: the GPU, not the launch thread, is the limit",
+   "fusion off": "4: 79.4, 8: 142.1 - the 2473 extra dispatches cost ~10 ms at 4 tokens: ~4 us per dispatch",
+   "dispatches": "2124 per 4-token graph (7322 nodes); ~420 of them substantial (experts, big projections, GDN, attention)"
+  },
+  "bytes_per_pass": {
+   "dense weights read once": "4.64 GB: attn_qkv 1.0, ssm_out 0.6, attn_gate 0.6, attn_q 0.4, hc up/down 0.67, shared expert 0.25, output head 0.52 (Q6_K), router 0.25 (F32); all Q8_0 unless noted",
+   "routed experts": "~1.06 GB per token at 4 tokens (39 distinct of 512), sub-linear after: 16 correlated tokens touch ~8.6 GB, not 15.5",
+   "bandwidth": "the big Q8_0 projections run at 204-213 GB/s up to 8 columns and 184 at 16 (test-backend-ops, 222 MB working set); the expert kernels at ~204 GB/s in the graph; LPDDR5X-8000 peak 256",
+   "reading": "a 4-token pass is ~42 ms of bytes at the measured ceiling and ~22-27 ms of everything else: ~7 ms of tiny dispatches (1700 x 4 us), the small-row projections, GDN, attention. Two streams add ~4 GB of expert bytes (19 ms) plus ~2 ms per token of non-byte work; that is the 1.3-1.4x."
+  },
+  "few_row_matmuls": {
+   "finding": "at 16 columns the F32 hyper-connection inject [10240 x 4] took 117 us per call (95 per pass) and the GDN beta/alpha [2560 x 48] 37 us (72 per pass): mul_mat_f declines a src0 narrower than its row tile, the vector kernel stops at 8 columns, so cuBLAS ran them",
+   "fix": "apply_small_m_mmvf: F32/F16 src0 with <= 64 rows and 9..64 columns runs the vector kernel over column chunks of 8",
+   "measured": "[4 x 10240] 117 -> 13 us, [48 x 2560] 37 -> 10 at 16 columns (test-backend-ops, graphs off); node timing at p=16: the [4,16] bucket 15.7 -> 6.7 ms, [48,16] 4.9 -> 2.4; bare graph p=16 139.8 -> 130.4 ms per pass, p=32 202 -> 191; p=4/8 unchanged (path not taken); 4-stream server verify 168.6 -> 165.3 (noise-level at the pass scale); mixed-stream agreement and token-21 logprobs unchanged",
+   "note": "test-backend-ops itself aborts intermittently under HIP graphs (hip_graph_internal: UpdateStreams failed), with and without this path; run it with GGML_CUDA_DISABLE_GRAPHS=1 or AMD_LOG_LEVEL=3 when it does"
+  },
+  "what_is_left": {
+   "per pass, shared by all streams": "dense bytes 22 ms at Q8_0 (a Q6_K trunk would be ~17: declined), tiny dispatches ~7 ms (hc mix/combine chains: 144 CONT + 144 CPY + 190 SCALE + 180 SIGMOID + ...), the small-row Q8_0 projections hc_down [10240 x 320] x 95 at ~100 us each at 16 columns (MMQ with five row tiles) ~9 ms",
+   "per token": "~5 ms of expert bytes at the ceiling plus ~2 ms of GDN / attention / hc work",
+   "unexplained": "a 10-25 ms gap between update_slots calls in some phases of a fresh server (pre 0, post 2, gap up to 26) that is 0 in others; not a steady-state cost, not chased"
+  }
  }
 }

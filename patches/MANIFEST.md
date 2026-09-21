@@ -254,3 +254,19 @@ that the driver would not fill at 262144 × 8192. Measured in `docs/results/conc
 (`multi_stream_qsa_20260921`): four users 35K deep 33–39 tok/s, four slots at 262144 × 8192 load
 and cost 1.3 GB over one. `src/models/block-graph.inc` joins the upstream side of the delta
 (`bootstrap/UPSTREAM.json`).
+
+## Addendum 2026-09-21: `apply_small_m_mmvf`
+
+Three files already in the delta (still 30 files, replay 30 / 30), 10 hunks:
+
+| file | what |
+|---|---|
+| `ggml/src/ggml-cuda/ggml-cuda.cu` | a few-row F32/F16 src0 (≤ 64 rows) with 9–64 columns runs the vector kernel over column chunks of 8 instead of falling through to cuBLAS |
+| `tools/server/server-context.cpp` | `STRIX_SPEC_TIMING` splits "other" into pre / post / gap |
+| `tests/test-backend-ops.cpp` | `STRIX_DENSE_PERF` (the big Q8_0 projections, 8 distinct matrices so the working set beats the MALL) and `STRIX_SMALL_PERF` (the few-row shapes) |
+
+Why: a 16-token verify step (four slots) ran the hyper-connection inject `[10240 × 4]` at 117 µs
+and the GDN beta/alpha `[2560 × 48]` at 37 µs per call through cuBLAS — 95 + 72 calls per pass —
+because `mul_mat_f` declines a src0 narrower than its row tile and the vector kernel stops at 8
+columns. With chunks: 13 and 10 µs; the bare 16-token pass 139.8 → 130.4 ms. Measured in
+`docs/results/concurrency-mtp-20260921.json` (`pass_budget_20260921`).

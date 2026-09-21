@@ -50,6 +50,20 @@ This ratio is a property of the model and the machine, not a tuning preference. 
 than copying the number if either changes: run the pass timing at each `draft_max` and compare
 marginal cost against marginal acceptance.
 
+## Where a pass goes, measured once more (2026-09-21)
+
+The bare target graph, graphs on: 69 / 97 / 140 / 202 ms for 4 / 8 / 16 / 32 tokens. Graphs off
+gives the same, so the launch thread is not the limit; the fusions are worth ~10 ms at 4 tokens
+(2473 dispatches, ~4 µs each). Of a 4-token pass ~42 ms is bytes at the measured ceiling — 4.64 GB
+of Q8_0 trunk read once (204–213 GB/s in the big projections) plus ~4.4 GB of routed experts
+(~204 GB/s) — and ~22–27 ms is everything else: ~7 ms of tiny dispatches, the small-row
+projections, GDN, attention. A second stream adds ~4 GB of expert bytes and ~2 ms per token of
+non-byte work, which is why two streams are 1.3–1.4× and not 2×. The drafts were already batched
+across slots. One cliff was real: at 16 columns the F32 hyper-connection inject `[10240 × 4]` and
+the GDN beta/alpha `[2560 × 48]` fell through to cuBLAS (117 and 37 µs per call, 95 + 72 calls);
+`apply_small_m_mmvf` runs the vector kernel over column chunks instead (13 and 10 µs; a 16-token
+pass 139.8 → 130.4 ms). Details: `docs/results/concurrency-mtp-20260921.json`, `pass_budget_20260921`.
+
 ## The draft's own cost
 
 A draft step is ~4.3 ms, and **60% of it is the LM head** — one 2560 × 248320 projection, entirely
