@@ -304,5 +304,36 @@
   "disk_tier": "patch apply_prompt_cache_disk: every RAM prompt-cache entry (tokens, state, checkpoints) is also written under STRIX_PROMPT_CACHE_DIR; a RAM miss is looked up on disk with the RAM cache's own prefix criteria. tmp/prompt_cache_probe.py: two 34K sessions alternating on one slot - first turns 38.5 / 37.5 s (33911 tokens), second turns 341 / 353 ms (14 tokens, RAM tier); server restarted, third turns 648 / 628 ms (13 / 50 tokens, read from disk in 1.45 / 1.22 s) against 38.9 s from scratch",
   "faithfulness": "greedy strings differed between a from-scratch run and the cached paths, so the first token's log-probabilities were compared instead (tmp/state_probs_probe.py): live slot, RAM-cache restore and disk-cache restore are identical to three decimals (top-5: -0.000, -13.297, -14.544, -15.037, -17.252); the from-scratch run differs (-0.000, -10.945, -11.506, -11.671, -11.772) with the same top token. The restore is exact; what differs is processing the last 13 tokens as a 14-token batch against inside an 8192-token prefill batch - the batch-size numerics this codebase has always had. So a cached conversation continues exactly as it would have on its own slot.",
   "manager": "profile prompt_cache_disk (default on), config/jan/prompt-cache, PROMPT_CACHE_DISK_MIB 16384, oldest first; Configuration page switch 'Keep conversation state on disk'"
+ },
+ "multi_slot_memory_20260921": {
+  "question": "what more than one slot costs in GPU memory at the context it is allowed (131072), and what the ubatch does to it",
+  "method": "GPU Adapter Memory counters (dedicated + shared) read right after the load, before any request, so the lazily mapped weights are untouched and the difference is the reserve; then one 34.6K-token prefill per ubatch with four slots",
+  "after_load_GB": {
+   "idle": {
+    "dedicated": 2.55,
+    "shared": 0.35
+   },
+   "np1 ubatch 8192": {
+    "dedicated": 74.51,
+    "shared": 1.44
+   },
+   "np4 ubatch 8192": {
+    "dedicated": 75.82,
+    "shared": 8.85
+   },
+   "np4 ubatch 2048": {
+    "dedicated": 73.42,
+    "shared": 4.18
+   },
+   "np8 ubatch 2048": {
+    "dedicated": 75.22,
+    "shared": 4.14
+   }
+  },
+  "prefill_np4_131072": {
+   "ubatch 8192": "34636 tokens in 39.7 s = 873 t/s",
+   "ubatch 2048": "34636 tokens in 48.3 s = 717 t/s"
+  },
+  "reading": "four slots at ubatch 8192 cost ~8.7 GB over one slot (the mixed-sequence reserve: dense f16 mask of n_ctx x ubatch plus the dense per-block bias, both scaling with the ubatch), almost all of it landing in shared memory. ubatch 2048 brings that to ~1.6 GB and eight slots cost no more than four, at 18% of prefill throughput (873 -> 717 t/s) and with a prefill chunk of 2.9 s instead of 9.4 s between other slots' decode steps. The root - the sparse attention path declining mixed-sequence ubatches so the reserve assumes dense - is the multi-stream QSA work not undertaken. Defaults unchanged: ubatch 8192; a multi-agent deployment that cares about the 7 GB or the interleave should set ubatch 2048 on the Configuration page's advanced section."
  }
 }
