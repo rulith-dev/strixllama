@@ -142,6 +142,10 @@ gate could not see them:
   2 streams 30.6, 4 streams 47.1, because the weight bytes are read once per batch regardless of
   how many sequences share it. It is the same lever speculation pulls for a single user, and the
   two do not stack: **with MTP on, four streams give 57.7 tok/s against 37.5 for one (1.54×)**,
-  each stream at 14 tok/s (`docs/results/concurrency-mtp-20260921.json`). A 16-token verify costs
-  2.6× a 4-token one on this MoE, since the routed experts touched grow with the batch. `-np 4`
+  each stream at 14 tok/s, and eight streams add nothing (62.9). A step costs ~30 ms fixed plus
+  ~1 ms per distinct routed expert it touches (512 experts, 10 per token, 116 MB each), so
+  draft tokens and other users' tokens draw on the same budget: **beyond four users, MTP off is
+  faster** — 71.4 tok/s at eight streams without it against 62.9 with it, 8.9 tok/s per user, the
+  highest aggregate measured here (`docs/results/concurrency-mtp-20260921.json`). The expert path
+  streams at ~110 GB/s of the ~215 this memory can deliver, which is the remaining lever. `-np 4`
   costs ~12 GB and does not load at context 262144 (131072 does), so the default is 1.

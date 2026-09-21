@@ -77,6 +77,13 @@ For the same reason a Q4_K_M draft body beats Q8_0 by under 1% and saves 880 MB 
   verifies 4 tokens per pass, four streams verify 16, and a 16-token pass costs 2.6× a 4-token one
   because the routed experts a batch touches grow with it; only the trunk, attention and the shared
   expert are read once. Bandwidth does not grow with slots; tokens per byte do, until the expert
-  set saturates. Also: `-np 4` does not load at context 262144 (sticky HIP launch failure during the
-  graph reserve; 131072 loads), and its mixed-sequence ubatches take the dense attention path, so
-  the multi-stream QSA work this would need is worth at most that 1.5×.
+  set saturates. The step fits `~30 ms + ~1 ms × distinct experts touched`, with 512 experts and
+  10 per token: 10 / 39 / 76 / 139 / 238 experts for 1 / 4 / 8 / 16 / 32 tokens. Two consequences,
+  both measured at eight slots: MTP saturates at four streams (62.4 → 62.9 tok/s from 4 to 8), and
+  since its draft tokens are only 60–70% useful, **past four users speculation off is faster** —
+  71.4 tok/s at eight streams without MTP against 62.9 with, 8.9 tok/s per user. The expert kernels
+  stream ~110 GB/s where this memory delivers ~215: at batch 8 each of ~76 experts sees about one
+  token, so it is launch count and occupancy, not bytes — the lever left for concurrency, and it
+  helps the single stream too. Also: `-np 4` does not load at context 262144 (sticky HIP launch
+  failure during the graph reserve; 131072 loads), and its mixed-sequence ubatches take the dense
+  attention path, so the multi-stream QSA work this would need is worth at most that 1.5–1.9×.

@@ -9,8 +9,23 @@
    "1 stream after": {"ms_per_token": 26.96, "tok_s": 37.10, "note": "no thermal drift after the four-stream burst"}
   },
   "reference_without_mtp_20260918": {"1 stream": 19.04, "2 streams": 30.64, "4 streams": 47.14, "note": "64 GB carve, spec off"},
-  "reading": "1.54x at four streams with MTP (37.5 -> 57.7) against 2.5x without it (19.0 -> 47.1). Both are the same lever - weight bytes read once per step shared by more tokens - and MTP had already taken most of it: a single stream verifies 4 tokens per pass, so four streams make a 16-token verify. A 4-token pass costs ~64 ms and a 16-token pass ~167 ms (69.4 ms/token x 2.4 accepted tokens per pass): 4x the tokens for 2.6x the time, which is close to bandwidth-linear because on a MoE the routed experts touched grow with the batch and only the trunk, attention and shared expert are read once. Four streams with MTP is still the highest aggregate measured on this machine (57.7 sum / 50.0 wall), each stream at 14 tok/s.",
-  "load_limit": "-np 4 fails to load at context 262144 (ROCm 'unspecified launch failure' at ~38 s, during the projector upload, i.e. a sticky error from the graph reserve; reproducible three times, also with unified memory, not memory pressure). Loads at 131072 and 65536. Bisected at 32768: MTP off, vision off, block-key cache off, decode gather off, QSA off and -np 2 all load, so the failure is the combination of four slots and the 262144 reserve, not one of the optimisations.",
-  "decision": "the multi-stream QSA work (making the sparse decode path accept mixed-sequence ubatches) would buy at most this 1.5x at long context; it is not the 2-3x hoped for. Default stays -np 1."
+  "reading": "1.54x at four streams with MTP (37.5 -> 57.7) against 2.5x without it (19.0 -> 47.1). Both are the same lever - weight bytes read once per step shared by more tokens - and MTP had already taken most of it: a single stream verifies 4 tokens per pass, so four streams make a 16-token verify. A 4-token pass costs ~64 ms and a 16-token pass ~167 ms (69.4 ms/token x 2.4 accepted tokens per pass): 4x the tokens for 2.6x the time, which is close to bandwidth-linear because on a MoE the routed experts touched grow with the batch and only the trunk, attention and shared expert are read once.",
+  "load_limit": "-np 4 fails to load at context 262144 (ROCm 'unspecified launch failure' at ~38 s, during the projector upload, i.e. a sticky error from the graph reserve; reproducible three times, also with unified memory, not memory pressure). Loads at 131072 and 65536. Bisected at 32768: MTP off, vision off, block-key cache off, decode gather off, QSA off and -np 2 all load, so the failure is the combination of four slots and the 262144 reserve, not one of the optimisations."
+ },
+ "decode_concurrency_8_slots_mtp_on_off_20260921": {
+  "question": "the expert-set model (512 experts, 10 per token, ~116 MB each: a batch of n tokens touches 512*(1-(502/512)^n) distinct experts) says the aggregate keeps rising with streams and that MTP's draft tokens compete with real users' tokens for the same expert bytes. Both testable at 8 slots.",
+  "method": "same as above with profile {parallel: 8, context: 65536} and mtp true / false; streams 1, 4, 8; 128 tokens each; the default server was restored afterwards.",
+  "results": {
+   "mtp_on":  {"1 stream": 37.4, "4 streams": {"ms_per_token": [60.85, 65.87, 63.84, 65.86], "sum_tok_s": 62.4, "wall_tok_s": 53.6}, "8 streams": {"ms_per_token": [123.8, 118.3, 129.1, 126.8, 130.3, 132.0, 129.1, 129.1], "sum_tok_s": 62.9, "wall_tok_s": 56.1}},
+   "mtp_off": {"1 stream": {"ms_per_token": 39.88, "tok_s": 25.1}, "4 streams": {"ms_per_token": 66.6, "sum_tok_s": 60.1, "wall_tok_s": 54.3}, "8 streams": {"ms_per_token": 112.1, "sum_tok_s": 71.4, "wall_tok_s": 64.0}}
+  },
+  "fit": "speculation off: step = ~30 ms fixed + ~1.0 ms per distinct expert touched (116 MB at ~110-116 GB/s). Predicts 40 / 69 / 106 ms for 1 / 4 / 8 tokens against 39.9 / 66.6 / 112.1 measured. The 96 GB carve is why the single-token step is 40 ms here and was 50 ms on 2026-09-18 at 64 GB.",
+  "reading": [
+   "MTP saturates at four streams: 62.4 sum at 4, 62.9 at 8. A 32-token verify is all expert bandwidth (238 distinct experts, ~27 GB per pass), so more streams only make each user slower (8 tok/s each).",
+   "MTP and concurrency compete for the same expert budget, and draft tokens are only 60-70% useful: at 8 streams MTP off wins, 71.4 against 62.9; at 4 they tie (60 vs 62); at 1 MTP wins by half (37 vs 25). The crossover is around four users.",
+   "Highest aggregate measured on this machine: 71.4 tok/s, 8 streams, speculation off, 8.9 tok/s per user - 2.85x the single-stream no-MTP rate, 1.9x the single-stream MTP rate.",
+   "The expert path streams at ~110 GB/s against ~210-220 achievable on this memory: at batch 8 each of the ~76 experts sees about one token, i.e. 76 x 3 small matrix-vector launches. That kernel-side gap, not bandwidth, is the remaining lever for concurrency, and it would help the single stream too."
+  ],
+  "decision": "default stays -np 1 with MTP on. For a multi-user deployment: 4 slots either way; beyond 4, MTP off. The multi-stream QSA work (mixed-sequence ubatches on the sparse decode path) is only worth doing for long-context multi-user use, and its ceiling is this ~1.5-1.9x."
  }
 }
