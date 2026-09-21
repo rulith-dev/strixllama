@@ -98,3 +98,9 @@ For the same reason a Q4_K_M draft body beats Q8_0 by under 1% and saves 880 MB 
   context × ubatch × 2 ≤ 2 GiB whenever `parallel > 1` and names the ubatch to set; at ubatch
   2048 four slots cost ~1.6 GB over one at 131072 and prefill 18% slower (873 → 717 t/s). Those ubatches take the dense
   attention path, so the multi-stream QSA work this would need is worth at most that 1.5–1.9×.
+  **Measured at depth (2026-09-21):** with four slots each holding a 35K prefix, a mixed-sequence step
+  runs dense attention over the whole used pool, and four users get 28.3 tok/s together at 99 ms/token
+  each — less than one user alone (31.7 tok/s, 28.9 ms/token on the sparse gather path); two users get
+  22.1. At short context the same four streams give 47 tok/s. That gap, plus the dense mask reserve and
+  the ubatch rule, is what a mixed-sequence sparse path is worth
+  (`docs/results/concurrency-mtp-20260921.json`, `multi_stream_long_context_20260921`).

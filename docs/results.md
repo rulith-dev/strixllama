@@ -153,3 +153,7 @@ gate could not see them:
   tokens per step — `apply_iq3s_mmq_hip` fixes both: eight users with MTP 60.5 → 70.1 tok/s. `-np 4`
   costs ~12 GB (the dense mask of the mixed-sequence reserve) and, above context 131072, needs a smaller ubatch (the mask must stay
   under 2 GiB; the manager says which), so the default is 1.
+- **Concurrency at depth is negative today.** A mixed-sequence ubatch takes the dense attention path
+  over the whole used pool: four users each 35K deep get 28.3 tok/s together at 99 ms/token, less than
+  one user alone (31.7 tok/s, 28.9 ms/token); at short context the same four get 47. A multi-stream
+  (mixed-sequence) sparse path would close that gap and remove the dense mask reserve with it.

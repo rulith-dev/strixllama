@@ -340,5 +340,25 @@
    "np4 ctx 262144 ubatch 4096": "loads in 45 s; four streams 43.2 tok/s; prefill 45.3 s = 765 t/s; dedicated 79.0 GB, shared 10.2 GB",
    "reading": "the full context is available to several slots; what has to give is the ubatch. The dense mask works at 2 GiB (131072 x 8192, 262144 x 4096) and not at 3.9 (262144 x 7936) or 4 GiB (262144 x 8192), so the manager's rule is now 2 x context x ubatch <= 2 GiB (error multi_slot_ubatch names the ubatch to set) instead of a context cap."
   }
+ },
+ "multi_stream_long_context_20260921": {
+  "question": "what several slots cost at long context today, where a mixed-sequence ubatch takes the dense attention path (qsa_scalar_visibility requires one sequence per ubatch; the decode gather requires n_stream == 1 and a single sequence), against one stream at the same depth on the sparse gather path",
+  "method": "tmp/mstream_longctx_probe.py 4096 4 30000: -np 4, ctx 262144, ubatch 4096, unified KV, MTP draft 3, production runtime; four ~34.9K-token prefixes (docs/*.md repeated, distinct header per stream) prefilled one at a time into four slots, then 64-token greedy decodes with cache_prompt so only the question is re-processed; short-context runs on the same server first",
+  "short_context": {
+   "4 streams": "46.9 tok/s aggregate, 70-74 ms/token per stream",
+   "1 stream": "25.0 ms/token"
+  },
+  "prefill_per_stream": "34863 tokens at 754-779 t/s (single-sequence ubatches, sparse)",
+  "long_context_34.9K_per_stream": {
+   "1 stream": "28.9 ms/token (31.7 tok/s) - sparse gather",
+   "2 streams": "54.4 / 49.6 ms/token per stream, 22.1 tok/s aggregate",
+   "4 streams": "95-101 ms/token per stream, 28.3 tok/s aggregate (256 tokens in 9.1 s)",
+   "1 stream afterwards": "31.2 ms/token, i.e. ~8% slower than before the mixed decodes - the block-key cache is probably invalidated by a mixed-sequence step the way an image invalidates it; not chased"
+  },
+  "gpu_GB": {
+   "after load": "dedicated 78.69, shared 10.18",
+   "after four 35K prefills": "dedicated 79.52, shared 10.85"
+  },
+  "reading": "at long context concurrency is negative today: four users at 35K each get 28 tok/s together, less than one user alone (32), and each waits 99 ms per token instead of 29. The short-context four-stream figure (47 tok/s here, 58 at ctx 65536) is what the same four users would get if their attention stayed sparse, because attention is the only per-token cost that grows with the depth; that gap - 1.7-2x aggregate and a third of the latency at four users, 22 -> ~40 tok/s at two - is what a multi-stream (mixed-sequence) QSA path would return, on top of removing the dense mask reserve (2 GiB at ubatch 4096, 8 GB at 8192), the 2 GiB ubatch rule and the multi-slot prefill loss (765 -> 873 t/s). It would not move the single-user number or the expert-bandwidth ceiling of ~60-70 tok/s aggregate."
  }
 }
