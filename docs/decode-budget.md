@@ -88,6 +88,8 @@ For the same reason a Q4_K_M draft body beats Q8_0 by under 1% and saves 880 MB 
   `apply_iq3s_mmq_hip` (eight users with MTP 60.5 → 70.1 tok/s; one user unchanged). The
   per-token costs that do grow with users are the GDN recurrent state (fp32, ~3 MB per sequence per
   layer, read and written every step: 15 ms of a 112 ms eight-user step), the PLE gather and the
-  per-token projections. Also: `-np 4` does not load at context 262144 (sticky HIP launch
-  failure during the graph reserve; 131072 loads), and its mixed-sequence ubatches take the dense
+  per-token projections. Also: with more than one slot the mixed-sequence reserve keeps a dense f16 mask of
+  n_ctx × ubatch, exactly 4 GiB at 262144 × 8192, which the driver refuses to fill; with a smaller
+  ubatch it loads but the first mixed prefill at 262144 still faults, while 131072 serves four
+  streams. The manager therefore refuses `parallel > 1` above 131072. Those ubatches take the dense
   attention path, so the multi-stream QSA work this would need is worth at most that 1.5–1.9×.

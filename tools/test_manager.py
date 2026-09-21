@@ -445,6 +445,14 @@ class ManagerTests(unittest.TestCase):
         with self.assertRaises(m.ManagerError) as caught:m.validate_profile({'context':1},self.model)
         self.assertEqual((caught.exception.code,caught.exception.params),('out_of_range',{'field':'context','low':512,'high':262144}))
         self.assertIn('between 512 and 262144',str(caught.exception))
-        for code in m.ERRORS: m.ERRORS[code].format(**{k:'' for k in ('field','low','high','levels','name','head','base')})
+        for code in m.ERRORS: m.ERRORS[code].format(**{k:'' for k in ('field','low','high','levels','name','head','base','limit')})
+    def test_more_than_one_slot_stops_at_the_context_it_can_serve(self):
+        # the mixed-sequence reserve's dense mask is 4 GiB at 262144 x 8192 and the first mixed prefill
+        # faults even when the ubatch is reduced; 131072 loads and serves. One slot is unaffected.
+        big={**self.model,'context':262144}
+        with self.assertRaises(m.ManagerError) as caught:m.validate_profile({'mtp':False,'context':262144,'parallel':4},big)
+        self.assertEqual((caught.exception.code,caught.exception.params),('multi_slot_context',{'limit':131072}))
+        self.assertEqual(m.validate_profile({'mtp':False,'context':262144,'parallel':1},big)['context'],262144)
+        self.assertEqual(m.validate_profile({'mtp':False,'context':131072,'parallel':8},big)['parallel'],8)
 
 if __name__=='__main__':unittest.main()

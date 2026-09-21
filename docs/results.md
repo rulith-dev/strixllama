@@ -150,4 +150,5 @@ gate could not see them:
   kernel afterwards, the expert path was already near the ceiling in the one-user configuration;
   what was slow was IQ3_S through MMQ (the multi-user batch sizes) and a tiling cliff above 16
   tokens per step — `apply_iq3s_mmq_hip` fixes both: eight users with MTP 60.5 → 70.1 tok/s. `-np 4`
-  costs ~12 GB and does not load at context 262144 (131072 does), so the default is 1.
+  costs ~12 GB (the dense mask of the mixed-sequence reserve) and does not work above context
+  131072 (the manager refuses it there), so the default is 1.
