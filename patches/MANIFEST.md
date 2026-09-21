@@ -194,3 +194,25 @@ decode twins — which is the whole reason this audit exists.
 
 A file that appears under `--delta` and is named by no live script is a reproducibility gap: the
 build cannot be recreated from the patch set alone.
+
+## Addendum 2026-09-21: `apply_iq3s_mmq_hip`
+
+The delta is now 27 files (23 modified, 4 added); the replay reports 27 / 27. One script, four files,
+last in the order because it rewrites the sign table `apply_iq3s_vecdot` added:
+
+| file | what |
+|---|---|
+| `ggml/src/ggml-cuda/vecdotq.cuh` | the IQ3_S sign-byte mask becomes two multiplies (`strixllama_iq3s_sign_mask(s4)`) instead of a 16-entry device table; the mmvq vec-dot uses it |
+| `ggml/src/ggml-cuda/mmq-load-tiles.cuh` | the IQ3_S MMQ tile loader on HIP: no `__vcmpne4`/`__vsub4` byte loops, grid read from the LDS copy |
+| `ggml/src/ggml-cuda/mmq.cuh` | `mul_mat_q_process_tile` fills the LDS grid after the x tile (`mmq_get_nbytes_shared` reserves it); the fork's compact routed MoE path admits IQ3_S and IQ4_XS, not only IQ4_NL |
+| `tests/test-backend-ops.cpp` | `STRIX_MOE_PERF` perf cases for this model's expert shapes (512 experts, 10 used, 640x2560 / 2560x640) |
+
+Measured with `test-backend-ops perf -o MUL_MAT_ID` under `STRIX_MOE_PERF`: IQ3_S gate/up 123 -> 149 GB/s
+at 8 tokens per step, 117 -> 157 at 16, 73 -> 156 at 32; IQ4_XS at 32 tokens 74 -> 170. See
+`docs/results/concurrency-mtp-20260921.json` for the decode-level effect.
+
+`tools/make_patch_script.py` learned to merge hunks whose anchors overlap after an earlier hunk has
+been applied, and to replay its own output against the before-tree before writing it - the first
+version of this script had four anchors in one loop body, of which the second no longer matched once
+the first had been applied.
+

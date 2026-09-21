@@ -81,9 +81,13 @@ For the same reason a Q4_K_M draft body beats Q8_0 by under 1% and saves 880 MB 
   10 per token: 10 / 39 / 76 / 139 / 238 experts for 1 / 4 / 8 / 16 / 32 tokens. Two consequences,
   both measured at eight slots: MTP saturates at four streams (62.4 → 62.9 tok/s from 4 to 8), and
   since its draft tokens are only 60–70% useful, **past four users speculation off is faster** —
-  71.4 tok/s at eight streams without MTP against 62.9 with, 8.9 tok/s per user. The expert kernels
-  stream ~110 GB/s where this memory delivers ~215: at batch 8 each of ~76 experts sees about one
-  token, so it is launch count and occupancy, not bytes — the lever left for concurrency, and it
-  helps the single stream too. Also: `-np 4` does not load at context 262144 (sticky HIP launch
+  71.4 tok/s at eight streams without MTP against 62.9 with, 8.9 tok/s per user. Per-kernel measurement
+  then showed the expert kernels near the ceiling in the one-user configuration (the ~110 GB/s
+  read was every per-token cost charged to the experts); what was slow was IQ3_S in MMQ — byte
+  loops in the tile loader on HIP — and a tiling cliff above 16 tokens per step, both fixed by
+  `apply_iq3s_mmq_hip` (eight users with MTP 60.5 → 70.1 tok/s; one user unchanged). The
+  per-token costs that do grow with users are the GDN recurrent state (fp32, ~3 MB per sequence per
+  layer, read and written every step: 15 ms of a 112 ms eight-user step), the PLE gather and the
+  per-token projections. Also: `-np 4` does not load at context 262144 (sticky HIP launch
   failure during the graph reserve; 131072 loads), and its mixed-sequence ubatches take the dense
   attention path, so the multi-stream QSA work this would need is worth at most that 1.5–1.9×.

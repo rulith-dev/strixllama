@@ -9,19 +9,19 @@ and see whether the result is byte-identical:
     clean upstream at the pinned revision
       + patches/iq3s-kernel/       (the whole-file snapshot)
       + PATCH_ORDER                (every script, in order)
-      = the 24 files of the delta, exactly
+      = the 27 files of the delta, exactly
 
     python tools/replay_bootstrap.py            # offline, using the clone's own git objects
-    python tools/replay_bootstrap.py --fetch    # no clone objects: download the 20, hash-checked
+    python tools/replay_bootstrap.py --fetch    # no clone objects: download the 23, hash-checked
 
-Clean upstream is reconstructed rather than re-cloned. Only 20 files differ from upstream, so only
+Clean upstream is reconstructed rather than re-cloned. Only 23 files differ from upstream, so only
 those need restoring, and bootstrap/UPSTREAM.json records each one's git blob hash and SHA-256.
 `git cat-file blob <hash>` returns content addressed by that hash, so a file restored this way is
 upstream's by construction - no network, and nothing to trust. --fetch is the fallback when the
 clone has no objects (a tarball, or a blobless clone that has since been pruned): it downloads
 through a mirror and checks each file against the recorded SHA-256 before using it.
 
-Exit code is 0 only when all 24 files match. Anything else means the recipe no longer describes the
+Exit code is 0 only when all 27 files match. Anything else means the recipe no longer describes the
 tree, which is the failure mode this project cares most about - a patch that silently stops applying
 leaves a build nobody can reproduce.
 """

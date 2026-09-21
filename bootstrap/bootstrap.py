@@ -55,6 +55,7 @@ PATCH_ORDER = [
     "apply_qsa_kb_image_guard", "apply_rs_pos_warn_stateless", "apply_spec_draft_ubatch",
     "apply_spec_timing", "apply_decode_timing", "apply_iq3s_vecdot", "apply_node_timing",
     "apply_mmid_sort_note", "apply_ple_prefetch_launch", "apply_trunk_twins",
+    "apply_iq3s_mmq_hip",           # after apply_iq3s_vecdot: it rewrites the sign table that one added
 ]
 
 # The ROCm SDK is installed as Python wheels, which is the only form AMD ships for Windows - the

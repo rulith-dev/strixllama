@@ -40,8 +40,43 @@ def anchored(a, b, i1, i2, j1, j2, text):
         old = "".join(a[lo:hi])
         if old and text.count(old) == 1:
             new = "".join(a[lo:i1]) + "".join(b[j1:j2]) + "".join(a[i2:hi])
-            return old, new
-    return None, None
+            return old, new, lo, hi
+    return None, None, None, None
+
+
+def anchored_pairs(a, b, hs, before, after):
+    """Anchor every hunk, merging neighbours whose context would overlap: the script applies hunks in
+    order, so a later anchor that reaches into an earlier hunk's lines no longer matches once that
+    hunk has been applied (found out the hard way on four hunks of one loop body). The result is
+    replayed against `before` and must give `after` exactly, or the whole file becomes one hunk."""
+    pairs, k = [], 0
+    while k < len(hs):
+        i1, i2, j1, j2 = hs[k]
+        while True:
+            old, new, lo, hi = anchored(a, b, i1, i2, j1, j2, before)
+            if old is None:
+                return None
+            if k + 1 < len(hs) and hs[k + 1][0] <= hi:      # next hunk starts inside this anchor
+                k += 1
+                i2, j2 = hs[k][1], hs[k][3]
+                continue
+            break
+        pairs.append((old, new))
+        k += 1
+    text = before
+    for old, new in pairs:
+        if text.count(old) != 1:
+            pairs = None
+            break
+        text = text.replace(old, new, 1)
+    if pairs is not None and text == after:
+        return pairs
+    # fall back to a single hunk spanning every change
+    i1, i2, j1, j2 = hs[0][0], hs[-1][1], hs[0][2], hs[-1][3]
+    old, new, lo, hi = anchored(a, b, i1, i2, j1, j2, before)
+    if old is None or before.replace(old, new, 1) != after:
+        return None
+    return [(old, new)]
 
 
 def main():
@@ -63,12 +98,9 @@ def main():
             print("  %s: already identical, skipped" % rel)
             continue
         a, b, hs = hunks(before, after)
-        pairs = []
-        for i1, i2, j1, j2 in hs:
-            old, new = anchored(a, b, i1, i2, j1, j2, before)
-            if old is None:
-                sys.exit("could not build a unique anchor in %s at line %d" % (rel, i1 + 1))
-            pairs.append((old, new))
+        pairs = anchored_pairs(a, b, hs, before, after)
+        if pairs is None:
+            sys.exit("could not build unique anchors that replay to the target in %s" % rel)
         blocks.append((rel, pairs))
         total += len(pairs)
         print("  %s: %d hunks" % (rel, len(pairs)))

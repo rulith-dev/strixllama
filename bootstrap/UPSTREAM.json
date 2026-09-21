@@ -11,6 +11,8 @@
   "ggml/src/ggml-cuda/mmb.cu": "79ee5140c8f86a63875e3b008bdc10e5223dc5c574df187ab25283991ded1e1b",
   "ggml/src/ggml-cuda/mmb.cuh": "1bff81ef7a2b088fa32c886462156bbcb7c33bb689a9fbf71d0a88c57314238e",
   "ggml/src/ggml-cuda/mmid.cu": "81a71f35f96d2cbd19afafb8de89884010e4eef1c986a20991f177355d3b3924",
+  "ggml/src/ggml-cuda/mmq-load-tiles.cuh": "0a43a30415c57c7d14d5f1cb03789fbd12850fa00cee9f7fb841d952b84c1484",
+  "ggml/src/ggml-cuda/mmq.cuh": "fc09981f738c1c8458bc1e0298b49d4adf19386cfd45e893587b218d4db1e4c3",
   "ggml/src/ggml-cuda/mmvq.cu": "29ecfbe9feabd762c8781af0a9074c8484b1356a6359dc2e42152c56bc36a101",
   "ggml/src/ggml-cuda/softcap.cu": "e1c2bc8f06990f5b61cca50f6edb5892576ded44b42c4c00bade0d288c7fb3a0",
   "ggml/src/ggml-cuda/softcap.cuh": "423a18f7e553a56c4482d3284207e53607b8edbd0a0f07882b8fce5a4a0f5ebb",
@@ -18,7 +20,7 @@
   "ggml/src/ggml-cuda/strixllama-chain.cuh": "15d9dc25d28d292f2ea7c72e80281694855c847465532991c1060c67a583723f",
   "ggml/src/ggml-cuda/strixllama-getrows-cast.cu": "5019f6b5201fd11d2d77c00a7a4df1ee387813d4acc28455fddd43105ec80a9a",
   "ggml/src/ggml-cuda/strixllama-getrows-cast.cuh": "ed9f51c30db922f743196cca350a1554067fd0fa021f404910ea6bea91d753dc",
-  "ggml/src/ggml-cuda/vecdotq.cuh": "8cbd7deac60f10eaf55fd338ce1447540d6826dd1bf3ab124a6dfcd0df3dce8b",
+  "ggml/src/ggml-cuda/vecdotq.cuh": "3b879a937d5143902db4cae2530529c32fd464dbfb822a7fe31875aba57707ce",
   "src/llama-context.cpp": "25599f18687c7883444da1f90d64d52dc25c9cb0133540f113a15ec7ae632873",
   "src/llama-graph.cpp": "3a360aedfd5100961bc317471f56e5a45770f29b0c4d49fbca3bd112136e1d86",
   "src/llama-lazy-reader.h": "94c18d968b0740a71be080597b9bebba11cd66545fe5c68f70c14bf38f14b42c",
@@ -29,6 +31,7 @@
   "src/llama-model.cpp": "ee9b24fcd6227fea4e27dc5322fac0a08254d0483b1b0165767eabbabc9322dc",
   "src/llama-model.h": "934dfaf7862ed94699692cfe4d93f7a1fbd7b646d4577dbd0ba197ee2f953175",
   "src/models/qwen4exp.cpp": "c86008771ccb5ed377ac2d32e001ffe0a54ee4f6d5a4b426d6c579f9b2558d8e",
+  "tests/test-backend-ops.cpp": "662e68c5eec293c8e52998dbb50954d4278aa628f0a028a36c7b518eae42e8fc",
   "tools/server/server-context.cpp": "972f91c352f7f91a44944d5d196e1a668a1ef139c78095772bf12fe084b8d31b"
  },
  "repo": "https://github.com/pwilkin/llama.cpp",
@@ -53,6 +56,14 @@
   "ggml/src/ggml-cuda/mmid.cu": {
    "git_blob": "66f45d838e0b47fd13e959cb3dec4a284fd4feb3",
    "sha256": "6df3c5bfc68f9cd6f11a9f2f6643cc9a48bbdb796c85ee1d29a9bed2254fb050"
+  },
+  "ggml/src/ggml-cuda/mmq-load-tiles.cuh": {
+   "git_blob": "7f00bad943e23e4c8e530125f9b23a4a2ff87a63",
+   "sha256": "f1adb201fa40087e294c40887e62f583f6a7adf40ddca542a735774742e0ae2c"
+  },
+  "ggml/src/ggml-cuda/mmq.cuh": {
+   "git_blob": "200f5c3273ec85087b00d0109500b593f00839c8",
+   "sha256": "0b4d4f4b535de133bf5914830acfba6baee3bfe08bc82b54944fa48693b0135f"
   },
   "ggml/src/ggml-cuda/mmvq.cu": {
    "git_blob": "d7d1f53ac33683bf7abd8ac88c1e3990491edbda",
@@ -109,6 +120,10 @@
   "src/models/qwen4exp.cpp": {
    "git_blob": "eb7fb4df6eb46728a60a345e45b693552357000c",
    "sha256": "7497a7e220ae65d4fbfaa0e7c302025da51c283e24600cb1c2ec60898cf82333"
+  },
+  "tests/test-backend-ops.cpp": {
+   "git_blob": "a1ca8d4a3b6b093f6555c1c85e47d0133806db70",
+   "sha256": "8fe648f1486c34c1c8188562f7d03ab3311f78ba564531a1f8141ee86dd543a5"
   },
   "tools/server/server-context.cpp": {
    "git_blob": "b6835e43459e3e9f1ea951e9f96f9ade22074cba",

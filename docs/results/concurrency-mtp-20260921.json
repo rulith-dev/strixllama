@@ -3,12 +3,40 @@
   "question": "does the 2.5x aggregate from four streams (2026-09-18, speculation off) stack with MTP speculation, which already verifies 4 tokens per pass?",
   "method": "tools/decode_concurrency.py --n 128 on the production build (bin/hip-rocm101), server started by tools/manager.py with profile {parallel: 4, context: 65536} - everything else the default: MTP on with the shared-Q4_K_M-head-iq4_xs draft, draft_max 3, QSA on, vision on, 96 GB carve, dedicated memory (unified=False). Short prompts, so attention/KV cost is negligible and this is the ceiling. Per-stream figures are the server's predicted_per_token_ms; 'sum' adds the streams' rates, 'wall' is tokens over wall-clock including prompt processing.",
   "results": {
-   "1 stream":  {"ms_per_token": 26.67, "tok_s": 37.49},
-   "2 streams": {"ms_per_token": [40.28, 41.50], "sum_tok_s": 48.9, "wall_tok_s": 43.20},
-   "4 streams": {"ms_per_token": [71.62, 64.76, 71.17, 70.23], "sum_tok_s": 57.7, "wall_tok_s": 50.03},
-   "1 stream after": {"ms_per_token": 26.96, "tok_s": 37.10, "note": "no thermal drift after the four-stream burst"}
+   "1 stream": {
+    "ms_per_token": 26.67,
+    "tok_s": 37.49
+   },
+   "2 streams": {
+    "ms_per_token": [
+     40.28,
+     41.5
+    ],
+    "sum_tok_s": 48.9,
+    "wall_tok_s": 43.2
+   },
+   "4 streams": {
+    "ms_per_token": [
+     71.62,
+     64.76,
+     71.17,
+     70.23
+    ],
+    "sum_tok_s": 57.7,
+    "wall_tok_s": 50.03
+   },
+   "1 stream after": {
+    "ms_per_token": 26.96,
+    "tok_s": 37.1,
+    "note": "no thermal drift after the four-stream burst"
+   }
   },
-  "reference_without_mtp_20260918": {"1 stream": 19.04, "2 streams": 30.64, "4 streams": 47.14, "note": "64 GB carve, spec off"},
+  "reference_without_mtp_20260918": {
+   "1 stream": 19.04,
+   "2 streams": 30.64,
+   "4 streams": 47.14,
+   "note": "64 GB carve, spec off"
+  },
   "reading": "1.54x at four streams with MTP (37.5 -> 57.7) against 2.5x without it (19.0 -> 47.1). Both are the same lever - weight bytes read once per step shared by more tokens - and MTP had already taken most of it: a single stream verifies 4 tokens per pass, so four streams make a 16-token verify. A 4-token pass costs ~64 ms and a 16-token pass ~167 ms (69.4 ms/token x 2.4 accepted tokens per pass): 4x the tokens for 2.6x the time, which is close to bandwidth-linear because on a MoE the routed experts touched grow with the batch and only the trunk, attention and shared expert are read once.",
   "load_limit": "-np 4 fails to load at context 262144 (ROCm 'unspecified launch failure' at ~38 s, during the projector upload, i.e. a sticky error from the graph reserve; reproducible three times, also with unified memory, not memory pressure). Loads at 131072 and 65536. Bisected at 32768: MTP off, vision off, block-key cache off, decode gather off, QSA off and -np 2 all load, so the failure is the combination of four slots and the 262144 reserve, not one of the optimisations."
  },
@@ -16,8 +44,49 @@
   "question": "the expert-set model (512 experts, 10 per token, ~116 MB each: a batch of n tokens touches 512*(1-(502/512)^n) distinct experts) says the aggregate keeps rising with streams and that MTP's draft tokens compete with real users' tokens for the same expert bytes. Both testable at 8 slots.",
   "method": "same as above with profile {parallel: 8, context: 65536} and mtp true / false; streams 1, 4, 8; 128 tokens each; the default server was restored afterwards.",
   "results": {
-   "mtp_on":  {"1 stream": 37.4, "4 streams": {"ms_per_token": [60.85, 65.87, 63.84, 65.86], "sum_tok_s": 62.4, "wall_tok_s": 53.6}, "8 streams": {"ms_per_token": [123.8, 118.3, 129.1, 126.8, 130.3, 132.0, 129.1, 129.1], "sum_tok_s": 62.9, "wall_tok_s": 56.1}},
-   "mtp_off": {"1 stream": {"ms_per_token": 39.88, "tok_s": 25.1}, "4 streams": {"ms_per_token": 66.6, "sum_tok_s": 60.1, "wall_tok_s": 54.3}, "8 streams": {"ms_per_token": 112.1, "sum_tok_s": 71.4, "wall_tok_s": 64.0}}
+   "mtp_on": {
+    "1 stream": 37.4,
+    "4 streams": {
+     "ms_per_token": [
+      60.85,
+      65.87,
+      63.84,
+      65.86
+     ],
+     "sum_tok_s": 62.4,
+     "wall_tok_s": 53.6
+    },
+    "8 streams": {
+     "ms_per_token": [
+      123.8,
+      118.3,
+      129.1,
+      126.8,
+      130.3,
+      132.0,
+      129.1,
+      129.1
+     ],
+     "sum_tok_s": 62.9,
+     "wall_tok_s": 56.1
+    }
+   },
+   "mtp_off": {
+    "1 stream": {
+     "ms_per_token": 39.88,
+     "tok_s": 25.1
+    },
+    "4 streams": {
+     "ms_per_token": 66.6,
+     "sum_tok_s": 60.1,
+     "wall_tok_s": 54.3
+    },
+    "8 streams": {
+     "ms_per_token": 112.1,
+     "sum_tok_s": 71.4,
+     "wall_tok_s": 64.0
+    }
+   }
   },
   "fit": "speculation off: step = ~30 ms fixed + ~1.0 ms per distinct expert touched (116 MB at ~110-116 GB/s). Predicts 40 / 69 / 106 ms for 1 / 4 / 8 tokens against 39.9 / 66.6 / 112.1 measured. The 96 GB carve is why the single-token step is 40 ms here and was 50 ms on 2026-09-18 at 64 GB.",
   "reading": [
@@ -27,5 +96,126 @@
    "The expert path streams at ~110 GB/s against ~210-220 achievable on this memory: at batch 8 each of the ~76 experts sees about one token, i.e. 76 x 3 small matrix-vector launches. That kernel-side gap, not bandwidth, is the remaining lever for concurrency, and it would help the single stream too."
   ],
   "decision": "default stays -np 1 with MTP on. For a multi-user deployment: 4 slots either way; beyond 4, MTP off. The multi-stream QSA work (mixed-sequence ubatches on the sparse decode path) is only worth doing for long-context multi-user use, and its ceiling is this ~1.5-1.9x."
+ },
+ "expert_path_iq3s_mmq_20260921": {
+  "question": "where the expert kernels actually stand against the memory ceiling, and what of it is kernel rather than bytes",
+  "method": "tests/test-backend-ops perf -o MUL_MAT_ID with STRIX_MOE_PERF (patch apply_iq3s_mmq_hip adds this model's shapes: 512 experts, 10 used, 640x2560 gate/up and 2560x640 down), GB/s = expected distinct experts touched (512*(1-(502/512)^n)) x expert bytes / time. n=1 and n=4 figures exceed DRAM bandwidth: the working set (7-36 MB) sits in the MALL between repetitions, so only n >= 8 is a DRAM number. In-situ check: STRIX_NODE_TIMING=1 GGML_CUDA_DISABLE_GRAPHS=1 on real decode steps (tmp captures, not kept).",
+  "before_GBps": {
+   "gate_up_640x2560": {
+    "iq3_s": {
+     "8": 123,
+     "16": 117,
+     "24": 74,
+     "32": 73,
+     "64": 63
+    },
+    "iq4_xs": {
+     "8": 175,
+     "16": 181,
+     "32": 74,
+     "64": 93
+    },
+    "iq4_nl": {
+     "8": 196,
+     "16": 201,
+     "32": 200,
+     "64": 194
+    },
+    "q4_0": {
+     "8": 194,
+     "16": 196,
+     "32": 73
+    }
+   },
+   "down_2560x640": {
+    "iq4_nl": {
+     "8": 140,
+     "16": 181,
+     "32": 178,
+     "64": 186
+    }
+   }
+  },
+  "after_GBps": {
+   "gate_up_640x2560": {
+    "iq3_s": {
+     "8": 149,
+     "16": 157,
+     "24": 140,
+     "32": 156,
+     "64": 156
+    },
+    "iq4_xs": {
+     "8": 178,
+     "16": 171,
+     "32": 170,
+     "64": 173
+    }
+   }
+  },
+  "what_changed": [
+   "IQ3_S MMQ tile loader on HIP: __vcmpne4/__vsub4 were byte loops (the mmvq vec-dot had already replaced them); sign bytes now come from two multiplies, +20% at 8-16 tokens",
+   "the IQ3_S grid is copied into LDS after the x tile: neutral within noise (the 2 KB table was L0-resident anyway), kept because it costs nothing",
+   "the fork's compact routed MoE MMQ path (mul_mat_q_routed_compact, RDNA3.5, 512 experts) was gated to IQ4_NL; opened to IQ3_S and IQ4_XS: the 24+ token cliff (73 GB/s) is gone, 156-173 GB/s to 64 tokens"
+  ],
+  "decode_ab": {
+   "method": "tmp/decode_ab.py: production runtime against the build, same manager argv, 128 tokens per stream, short prompts, 96 GB carve",
+   "np1 mtp 1 stream": {
+    "prod": [
+     37.5,
+     36.7,
+     37.1
+    ],
+    "dev": [
+     37.6,
+     36.4,
+     37.4
+    ],
+    "read": "unchanged: a 4-token verify goes through mmvq, not MMQ"
+   },
+   "np4 mtp 4 streams": {
+    "prod": [
+     57.8,
+     66.8
+    ],
+    "dev": [
+     60.9,
+     60.2
+    ],
+    "read": "within the acceptance noise (prod's two runs differ by 15%)"
+   },
+   "np8 mtp 8 streams": {
+    "prod": [
+     60.9,
+     60.2
+    ],
+    "dev": [
+     73.1,
+     67.1
+    ],
+    "read": "+16%: the 32-token verify was on the cliff"
+   },
+   "np8 nomtp 8 streams": {
+    "prod": [
+     66.8,
+     68.7,
+     68.1,
+     68.8
+    ],
+    "dev": [
+     73.8,
+     73.3,
+     70.6,
+     72.3
+    ],
+    "read": "+6%"
+   }
+  },
+  "reading": "In the production configuration (one user, MTP, 4-7 tokens per verify) the expert kernels were already near the ceiling - the earlier '110 GB/s' came from attributing every per-token cost to the experts; the per-token costs that actually grow with the batch are the GDN state traffic (fp32 recurrent state, ~3 MB per sequence per layer, read and written every step), the PLE gather, and the per-token projections. What was kernel-bound was IQ3_S in MMQ (the multi-user regime) and the tiling cliff above 16 tokens; both are fixed. The remaining IQ3_S gap to IQ4_NL (157 vs ~190) is the format's unpacking, not memory.",
+  "not_done": [
+   "mmvq IQ3_S at 1-4 tokens is 15% slower per byte than IQ4_NL (cache-hot 327 vs 388); it is the single user's path and would be worth ~3 ms of a 64 ms pass",
+   "GDN recurrent state in bf16 instead of fp32 would halve the per-sequence traffic that makes 8 streams cost 15 ms per step in GATED_DELTA_NET; numerics untested",
+   "the -np 4 at context 262144 load failure"
+  ]
  }
 }
