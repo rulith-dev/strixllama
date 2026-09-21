@@ -144,9 +144,10 @@ gate could not see them:
   two do not stack: **with MTP on, four streams give 57.7 tok/s against 37.5 for one (1.54×)**,
   each stream at 14 tok/s, and eight streams add nothing (62.9). A step costs ~30 ms fixed plus
   ~1 ms per distinct routed expert it touches (512 experts, 10 per token, 116 MB each), so
-  draft tokens and other users' tokens draw on the same budget: **beyond four users, MTP off is
-  faster** — 71.4 tok/s at eight streams without it against 62.9 with it, 8.9 tok/s per user, the
-  highest aggregate measured here (`docs/results/concurrency-mtp-20260921.json`). Measured per
+  draft tokens and other users' tokens draw on the same budget. Before `apply_iq3s_mmq_hip` that
+  made MTP lose past four users (62.9 against 71.4 at eight streams); with it the two tie (71.8
+  against 72.7), and a per-step draft budget that thins the draft under load measured nothing, so
+  the fixed draft of 3 stays at every stream count (`docs/results/concurrency-mtp-20260921.json`). Measured per
   kernel afterwards, the expert path was already near the ceiling in the one-user configuration;
   what was slow was IQ3_S through MMQ (the multi-user batch sizes) and a tiling cliff above 16
   tokens per step — `apply_iq3s_mmq_hip` fixes both: eight users with MTP 60.5 → 70.1 tok/s. `-np 4`

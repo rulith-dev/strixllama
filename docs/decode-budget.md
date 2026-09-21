@@ -79,9 +79,12 @@ For the same reason a Q4_K_M draft body beats Q8_0 by under 1% and saves 880 MB 
   expert are read once. Bandwidth does not grow with slots; tokens per byte do, until the expert
   set saturates. The step fits `~30 ms + ~1 ms × distinct experts touched`, with 512 experts and
   10 per token: 10 / 39 / 76 / 139 / 238 experts for 1 / 4 / 8 / 16 / 32 tokens. Two consequences,
-  both measured at eight slots: MTP saturates at four streams (62.4 → 62.9 tok/s from 4 to 8), and
-  since its draft tokens are only 60–70% useful, **past four users speculation off is faster** —
-  71.4 tok/s at eight streams without MTP against 62.9 with, 8.9 tok/s per user. Per-kernel measurement
+  both measured at eight slots before `apply_iq3s_mmq_hip`: MTP saturated at four streams (62.4 →
+  62.9 tok/s from 4 to 8) and lost to speculation off past four users (62.9 against 71.4). That was
+  the 24+ token MMQ cliff, not the draft: with the fix, MTP at eight streams ties speculation off
+  (71.8 against 72.7), and a per-step draft budget that thins the draft under load measured nothing.
+  A bf16 recurrent state measured nothing either — the state's traffic is cache-resident and the GDN
+  kernel's 15 ms at eight users is how it walks the state, not how many bytes it has. Per-kernel measurement
   then showed the expert kernels near the ceiling in the one-user configuration (the ~110 GB/s
   read was every per-token cost charged to the experts); what was slow was IQ3_S in MMQ — byte
   loops in the tile loader on HIP — and a tiling cliff above 16 tokens per step, both fixed by

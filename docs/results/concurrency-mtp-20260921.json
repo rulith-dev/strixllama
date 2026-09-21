@@ -219,5 +219,82 @@
   "tried_and_dropped": [
    "mmvq IQ3_S vec-dot with one dp4a per word (signed bytes by xor+add) instead of the two the sign split needs: 913/913 correct, no change at n=1/4/8 (295/332/150 GB/s-equivalent against 282-336 before). The cache-hot n<=4 figures already exceed DRAM bandwidth, so the single user's gate/up kernels are memory-bound as they stand; the 15% per-byte gap to IQ4_NL on a hot cache does not reach the wall clock. Reverted."
   ]
+ },
+ "gdn_state_bf16_20260921": {
+  "question": "the GDN recurrent state (128x128 per head, 48 heads, 36 layers: 3.1 MB per sequence per layer, gathered by get_rows, read and rewritten by the kernel, copied back as snapshots) is 15 ms of GATED_DELTA_NET plus 7.6 ms of GET_ROWS in an eight-user step; does keeping it in bf16 (the state cache dtype vLLM uses) buy any of that back?",
+  "method": "recurrent_type_v BF16 behind STRIX_GDN_STATE_BF16 in llama-model.cpp (get_rows widens to f32 for the kernel, the snapshot copy narrows; the CUDA scale op taught bf16 so ggml_scale_inplace(state, 0) can zero a new sequence's row), built to build/bin, A/B against the production runtime with tmp/decode_ab.py.",
+  "results": {
+   "np8 nomtp 8 streams": {
+    "f32": [
+     72.2,
+     73.2
+    ],
+    "bf16": [
+     73.3,
+     72.4
+    ]
+   },
+   "np4 nomtp 4 streams": {
+    "f32": [
+     59.6,
+     60.8
+    ],
+    "bf16": [
+     59.7,
+     59.0
+    ]
+   },
+   "np1 mtp 1 stream": {
+    "f32": [
+     37.9,
+     36.7,
+     37.8
+    ],
+    "bf16": [
+     36.3,
+     37.5,
+     36.4
+    ]
+   }
+  },
+  "reading": "nothing, at any stream count. The state's DRAM traffic was not what those 22 ms were: the f32 intermediate get_rows writes and the kernel reads is MALL-resident (25 MB for eight sequences against a 32 MB last-level cache), and the kernel itself runs at ~120 GB/s-equivalent because of how it walks the state, not because of how many bytes the state has. Halving the stored bytes changed neither. Reverted; a faster GDN kernel would be a kernel rewrite (coalescing and occupancy on the per-head 64 KB state), worth up to ~10 ms of an eight-user step and ~1 ms of a one-user one.",
+  "not_verified": "numerics of bf16 state were not evaluated since there was nothing to keep"
+ },
+ "draft_budget_20260921": {
+  "question": "a per-step draft budget shared by the drafting slots (STRIX_SPEC_BUDGET=4: one slot 3, two slots 2 each, three or four 1, more than four none) - does 'fewer draft tokens per user under load' beat the fixed draft of 3?",
+  "method": "server-side patch in the drafting loop (n_max trimmed per slot, slots with a zero share skip drafting and catch up later), built to build/bin, A/B against the production runtime (fixed draft 3), -np 8 in both so only the stream count changes, 128 tokens per stream.",
+  "results": {
+   "2 streams": {
+    "fixed 3": [
+     47.6,
+     48.9
+    ],
+    "budget (2 each)": [
+     49.3,
+     52.1
+    ]
+   },
+   "4 streams": {
+    "fixed 3": [
+     63.6,
+     59.3
+    ],
+    "budget (1 each)": [
+     55.0,
+     60.2
+    ]
+   },
+   "8 streams": {
+    "fixed 3": [
+     68.7,
+     74.8
+    ],
+    "budget (none)": [
+     70.3,
+     69.2
+    ]
+   }
+  },
+  "reading": "no gain that survives the noise (+5% at two streams, -6% at four, -3% at eight, run-to-run spread of the same size). With apply_iq3s_mmq_hip the fixed draft of 3 is no longer worse than no draft at eight streams (71.8 against 72.7), so the earlier 'past four users turn MTP off' no longer holds either - it was a symptom of the 24+ token cliff. Dropped; the fixed draft of 3 stays at every stream count."
  }
 }
