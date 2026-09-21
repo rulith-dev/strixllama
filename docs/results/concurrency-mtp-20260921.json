@@ -334,6 +334,11 @@
    "ubatch 8192": "34636 tokens in 39.7 s = 873 t/s",
    "ubatch 2048": "34636 tokens in 48.3 s = 717 t/s"
   },
-  "reading": "four slots at ubatch 8192 cost ~8.7 GB over one slot (the mixed-sequence reserve: dense f16 mask of n_ctx x ubatch plus the dense per-block bias, both scaling with the ubatch), almost all of it landing in shared memory. ubatch 2048 brings that to ~1.6 GB and eight slots cost no more than four, at 18% of prefill throughput (873 -> 717 t/s) and with a prefill chunk of 2.9 s instead of 9.4 s between other slots' decode steps. The root - the sparse attention path declining mixed-sequence ubatches so the reserve assumes dense - is the multi-stream QSA work not undertaken. Defaults unchanged: ubatch 8192; a multi-agent deployment that cares about the 7 GB or the interleave should set ubatch 2048 on the Configuration page's advanced section."
+  "reading": "four slots at ubatch 8192 cost ~8.7 GB over one slot (the mixed-sequence reserve: dense f16 mask of n_ctx x ubatch plus the dense per-block bias, both scaling with the ubatch), almost all of it landing in shared memory. ubatch 2048 brings that to ~1.6 GB and eight slots cost no more than four, at 18% of prefill throughput (873 -> 717 t/s) and with a prefill chunk of 2.9 s instead of 9.4 s between other slots' decode steps. The root - the sparse attention path declining mixed-sequence ubatches so the reserve assumes dense - is the multi-stream QSA work not undertaken. Defaults unchanged: ubatch 8192; a multi-agent deployment that cares about the 7 GB or the interleave should set ubatch 2048 on the Configuration page's advanced section.",
+  "full_context": {
+   "np4 ctx 262144 ubatch 2048": "loads in 37 s; four streams 42.3 tok/s (64-token runs); 34636-token prefill 48.0 s = 722 t/s; after load dedicated 78.7 GB, shared 7.2 GB",
+   "np4 ctx 262144 ubatch 4096": "loads in 45 s; four streams 43.2 tok/s; prefill 45.3 s = 765 t/s; dedicated 79.0 GB, shared 10.2 GB",
+   "reading": "the full context is available to several slots; what has to give is the ubatch. The dense mask works at 2 GiB (131072 x 8192, 262144 x 4096) and not at 3.9 (262144 x 7936) or 4 GiB (262144 x 8192), so the manager's rule is now 2 x context x ubatch <= 2 GiB (error multi_slot_ubatch names the ubatch to set) instead of a context cap."
+  }
  }
 }

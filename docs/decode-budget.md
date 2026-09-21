@@ -92,7 +92,9 @@ For the same reason a Q4_K_M draft body beats Q8_0 by under 1% and saves 880 MB 
   per-token costs that do grow with users are the GDN recurrent state (fp32, ~3 MB per sequence per
   layer, read and written every step: 15 ms of a 112 ms eight-user step), the PLE gather and the
   per-token projections. Also: with more than one slot the mixed-sequence reserve keeps a dense f16 mask of
-  n_ctx × ubatch, exactly 4 GiB at 262144 × 8192, which the driver refuses to fill; with a smaller
-  ubatch it loads but the first mixed prefill at 262144 still faults, while 131072 serves four
-  streams. The manager therefore refuses `parallel > 1` above 131072. Those ubatches take the dense
+  n_ctx × ubatch, exactly 4 GiB at 262144 × 8192, which the driver refuses to fill; at 3.9 GiB
+  (ubatch 7936) it loads but the first mixed prefill faults, and at 2 GiB (131072 × 8192 or
+  262144 × 4096) it loads, decodes and prefills. The manager therefore requires
+  context × ubatch × 2 ≤ 2 GiB whenever `parallel > 1` and names the ubatch to set; at ubatch
+  2048 four slots cost ~1.6 GB over one at 131072 and prefill 18% slower (873 → 717 t/s). Those ubatches take the dense
   attention path, so the multi-stream QSA work this would need is worth at most that 1.5–1.9×.

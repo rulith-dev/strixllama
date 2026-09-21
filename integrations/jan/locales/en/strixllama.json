@@ -174,7 +174,7 @@
     "thinking_level": "Thinking depth must be one of {{levels}}",
     "draft_min": "The MTP threshold must be between 0 and 1",
     "ubatch_gt_batch": "UBatch cannot be larger than Batch",
-    "multi_slot_context": "With more than one concurrent slot the context is limited to {{limit}}",
+    "multi_slot_ubatch": "With more than one concurrent slot, UBatch must be at most {{limit}} at this context length (Advanced)",
     "context_exceeds": "The context is longer than the model declares",
     "kv_fixed": "This configuration keeps the KV cache at f16",
     "flash_attention_value": "Flash Attention must be on or off",

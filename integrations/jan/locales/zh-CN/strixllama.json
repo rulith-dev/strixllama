@@ -174,7 +174,7 @@
     "thinking_level": "思考深度应为 {{levels}} 之一",
     "draft_min": "MTP 阈值应在 0–1 之间",
     "ubatch_gt_batch": "UBatch 不能大于 Batch",
-    "multi_slot_context": "并发槽位大于 1 时，上下文最多 {{limit}}",
+    "multi_slot_ubatch": "并发槽位大于 1 时，这个上下文长度下 UBatch 最多 {{limit}}（在“高级”里改）",
     "context_exceeds": "上下文超过模型声明的长度",
     "kv_fixed": "当前配置固定使用 f16 KV 缓存",
     "flash_attention_value": "Flash Attention 应为 on 或 off",

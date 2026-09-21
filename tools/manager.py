@@ -82,8 +82,9 @@ MMPROJ_NAME = 'mmproj-F16.gguf'
 # separately (enable_thinking=false). The template raises on anything outside low/medium/xhigh.
 THINKING = {'off': None, 'low': 'low', 'medium': 'medium', 'high': 'xhigh'}
 PORT = 8080
-# the longest context more than one slot can serve; see validate_profile()
-MULTI_SLOT_CONTEXT = 131072
+# with more than one slot the mixed-sequence reserve keeps a dense f16 mask of context x ubatch;
+# 2 GiB of it works (131072 x 8192, 262144 x 4096), 3.9 GiB faults - see validate_profile()
+MULTI_SLOT_MASK_BYTES = 1 << 31
 # the disk tier of the server's prompt cache: at most this much under config/jan/prompt-cache
 PROMPT_CACHE_DISK_MIB = 16384
 HIDDEN = 0x08000000 if os.name == 'nt' else 0
@@ -121,7 +122,7 @@ ERRORS = {
     'thinking_level': 'Thinking depth must be one of {levels}',
     'draft_min': 'The MTP threshold must be between 0 and 1',
     'ubatch_gt_batch': 'ubatch cannot be larger than batch',
-    'multi_slot_context': 'With more than one slot the context is limited to {limit}',
+    'multi_slot_ubatch': 'With more than one slot, ubatch must be at most {limit} at this context length',
     'context_exceeds': 'The context is longer than the model declares',
     'kv_fixed': 'This configuration keeps the KV cache at f16',
     'flash_attention_value': 'Flash Attention must be on or off',
@@ -528,11 +529,13 @@ def validate_profile(raw, model):
     if type(cfg['draft_min']) not in (int,float) or not 0 <= cfg['draft_min'] <= 1: fail('draft_min')
     if cfg['ubatch'] > cfg['batch']: fail('ubatch_gt_batch')
     # More than one slot means ubatches that mix sequences, which the sparse attention path declines,
-    # so the reserve keeps a dense f16 mask of n_ctx x ubatch: at 262144 x 8192 that is exactly 4 GiB,
-    # which the driver will not fill (a sticky launch failure at load), and with the ubatch reduced
-    # to fit, the first mixed prefill at 262144 still faults in a MUL_MAT. 131072 loads and serves
-    # four streams (docs/results/concurrency-mtp-20260921.json); multi-slot use stops there.
-    if cfg.get('parallel', 1) > 1 and cfg['context'] > MULTI_SLOT_CONTEXT: fail('multi_slot_context', limit=MULTI_SLOT_CONTEXT)
+    # so the reserve keeps a dense f16 mask of n_ctx x ubatch. At 4 GiB (262144 x 8192) the driver
+    # will not fill it (a sticky launch failure at load); at 3.9 GiB (ubatch 7936) it loads and the
+    # first mixed prefill faults in a MUL_MAT; at 2 GiB (131072 x 8192, 262144 x 4096) and below it
+    # loads, decodes four streams and prefills 34K tokens (docs/results/concurrency-mtp-20260921.json).
+    # The full context stays available to several slots - the ubatch is what has to give.
+    if cfg.get('parallel', 1) > 1 and 2 * cfg['context'] * cfg['ubatch'] > MULTI_SLOT_MASK_BYTES:
+        fail('multi_slot_ubatch', limit=MULTI_SLOT_MASK_BYTES // (2 * cfg['context']) // 256 * 256)
     if model.get('context') and cfg['context'] > model['context']: fail('context_exceeds')
     if cfg['kv'] != 'f16': fail('kv_fixed')
     if cfg['flash_attention'] not in ('on', 'off'): fail('flash_attention_value')
