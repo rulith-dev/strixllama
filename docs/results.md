@@ -138,7 +138,10 @@ gate could not see them:
   against one cached graph result. More than one live result needs scheduler surgery.
 - `set_input_kq_mask` scans all 85K cells once per decode (~0.9 ms).
 - About 43 ms of the 85K pass is weight bandwidth and does not move without changing the file.
-- Decode has roughly 2.5× of unused machine: 1 stream 19.0 tok/s aggregate, 2 streams 30.6, 4
-  streams 47.1, because the weight bytes are read once per batch regardless of how many sequences
-  share it. `-np 4` costs ~12 GB, so the default is 1 — but for concurrent users it is free
-  throughput, and it is the same lever speculation already pulls for a single user.
+- Decode has roughly 2.5× of unused machine *with speculation off*: 1 stream 19.0 tok/s aggregate,
+  2 streams 30.6, 4 streams 47.1, because the weight bytes are read once per batch regardless of
+  how many sequences share it. It is the same lever speculation pulls for a single user, and the
+  two do not stack: **with MTP on, four streams give 57.7 tok/s against 37.5 for one (1.54×)**,
+  each stream at 14 tok/s (`docs/results/concurrency-mtp-20260921.json`). A 16-token verify costs
+  2.6× a 4-token one on this MoE, since the routed experts touched grow with the batch. `-np 4`
+  costs ~12 GB and does not load at context 262144 (131072 does), so the default is 1.

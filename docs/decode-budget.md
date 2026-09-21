@@ -72,3 +72,11 @@ For the same reason a Q4_K_M draft body beats Q8_0 by under 1% and saves 880 MB 
   bytes are read once per batch. Four streams give 47.1 tok/s aggregate against 19.0 for one. The
   default is `-np 1` because slots cost ~12 GB, but the machine is not compute-bound at decode — a
   GPU reading 75% busy during decode is memory stall plus the host gap between tokens.
+  **Measured again with MTP on (2026-09-21):** 37.5 → 48.9 → 57.7 tok/s for 1 / 2 / 4 streams,
+  i.e. 1.54× where speculation-off gave 2.5×. MTP had already spent most of the lever — one stream
+  verifies 4 tokens per pass, four streams verify 16, and a 16-token pass costs 2.6× a 4-token one
+  because the routed experts a batch touches grow with it; only the trunk, attention and the shared
+  expert are read once. Bandwidth does not grow with slots; tokens per byte do, until the expert
+  set saturates. Also: `-np 4` does not load at context 262144 (sticky HIP launch failure during the
+  graph reserve; 131072 loads), and its mixed-sequence ubatches take the dense attention path, so
+  the multi-stream QSA work this would need is worth at most that 1.5×.

@@ -1,0 +1,16 @@
+{
+ "decode_concurrency_with_mtp_20260921": {
+  "question": "does the 2.5x aggregate from four streams (2026-09-18, speculation off) stack with MTP speculation, which already verifies 4 tokens per pass?",
+  "method": "tools/decode_concurrency.py --n 128 on the production build (bin/hip-rocm101), server started by tools/manager.py with profile {parallel: 4, context: 65536} - everything else the default: MTP on with the shared-Q4_K_M-head-iq4_xs draft, draft_max 3, QSA on, vision on, 96 GB carve, dedicated memory (unified=False). Short prompts, so attention/KV cost is negligible and this is the ceiling. Per-stream figures are the server's predicted_per_token_ms; 'sum' adds the streams' rates, 'wall' is tokens over wall-clock including prompt processing.",
+  "results": {
+   "1 stream":  {"ms_per_token": 26.67, "tok_s": 37.49},
+   "2 streams": {"ms_per_token": [40.28, 41.50], "sum_tok_s": 48.9, "wall_tok_s": 43.20},
+   "4 streams": {"ms_per_token": [71.62, 64.76, 71.17, 70.23], "sum_tok_s": 57.7, "wall_tok_s": 50.03},
+   "1 stream after": {"ms_per_token": 26.96, "tok_s": 37.10, "note": "no thermal drift after the four-stream burst"}
+  },
+  "reference_without_mtp_20260918": {"1 stream": 19.04, "2 streams": 30.64, "4 streams": 47.14, "note": "64 GB carve, spec off"},
+  "reading": "1.54x at four streams with MTP (37.5 -> 57.7) against 2.5x without it (19.0 -> 47.1). Both are the same lever - weight bytes read once per step shared by more tokens - and MTP had already taken most of it: a single stream verifies 4 tokens per pass, so four streams make a 16-token verify. A 4-token pass costs ~64 ms and a 16-token pass ~167 ms (69.4 ms/token x 2.4 accepted tokens per pass): 4x the tokens for 2.6x the time, which is close to bandwidth-linear because on a MoE the routed experts touched grow with the batch and only the trunk, attention and shared expert are read once. Four streams with MTP is still the highest aggregate measured on this machine (57.7 sum / 50.0 wall), each stream at 14 tok/s.",
+  "load_limit": "-np 4 fails to load at context 262144 (ROCm 'unspecified launch failure' at ~38 s, during the projector upload, i.e. a sticky error from the graph reserve; reproducible three times, also with unified memory, not memory pressure). Loads at 131072 and 65536. Bisected at 32768: MTP off, vision off, block-key cache off, decode gather off, QSA off and -np 2 all load, so the failure is the combination of four slots and the 262144 reserve, not one of the optimisations.",
+  "decision": "the multi-stream QSA work (making the sparse decode path accept mixed-sequence ubatches) would buy at most this 1.5x at long context; it is not the 2-3x hoped for. Default stays -np 1."
+ }
+}
