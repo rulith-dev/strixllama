@@ -99,7 +99,7 @@ file the patch set adds or renames is invisible to an existing `build.ninja`.
 Check it against the recipe:
 
 ```bash
-python tools/replay_bootstrap.py     # clean upstream + patch set == the 29 files. Expect 29 / 29.
+python tools/replay_bootstrap.py     # clean upstream + patch set == the 30 files. Expect 30 / 30.
 ```
 
 ## 5. Model files

@@ -150,10 +150,13 @@ gate could not see them:
   the fixed draft of 3 stays at every stream count (`docs/results/concurrency-mtp-20260921.json`). Measured per
   kernel afterwards, the expert path was already near the ceiling in the one-user configuration;
   what was slow was IQ3_S through MMQ (the multi-user batch sizes) and a tiling cliff above 16
-  tokens per step — `apply_iq3s_mmq_hip` fixes both: eight users with MTP 60.5 → 70.1 tok/s. `-np 4`
-  costs ~12 GB (the dense mask of the mixed-sequence reserve) and, above context 131072, needs a smaller ubatch (the mask must stay
-  under 2 GiB; the manager says which), so the default is 1.
-- **Concurrency at depth is negative today.** A mixed-sequence ubatch takes the dense attention path
-  over the whole used pool: four users each 35K deep get 28.3 tok/s together at 99 ms/token, less than
-  one user alone (31.7 tok/s, 28.9 ms/token); at short context the same four get 47. A multi-stream
-  (mixed-sequence) sparse path would close that gap and remove the dense mask reserve with it.
+  tokens per step — `apply_iq3s_mmq_hip` fixes both: eight users with MTP 60.5 → 70.1 tok/s.
+- **Several users at depth.** A ubatch that serves several slots carries several sequences; until
+  `apply_multi_stream_qsa` the sparse path declined it and ran dense attention over the whole used
+  pool, so four users each 35K deep got 28.3 tok/s together at 99 ms/token, less than one user alone
+  (31.7). With mixed ubatches on the sparse path they get 33–39 tok/s at 70–87 ms/token, two users
+  34 (was 22), and one user is 7% faster at depth (26.8 ms/token) because a multi-stream step no
+  longer switches the block-key cache off for good. The mixed reserve graph lost its dense mask with
+  it: four slots at 262144 × 8192 load and cost 1.3 GB over one slot (4096 used to cost 9 GB and
+  8192 did not load), so the default `-np 1` is only about the ~1 GB and the slower prefill of a
+  shared pool. Image input needs a single slot.

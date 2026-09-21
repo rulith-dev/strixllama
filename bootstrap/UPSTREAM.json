@@ -24,13 +24,14 @@
   "src/llama-context.cpp": "25599f18687c7883444da1f90d64d52dc25c9cb0133540f113a15ec7ae632873",
   "src/llama-graph.cpp": "3a360aedfd5100961bc317471f56e5a45770f29b0c4d49fbca3bd112136e1d86",
   "src/llama-lazy-reader.h": "94c18d968b0740a71be080597b9bebba11cd66545fe5c68f70c14bf38f14b42c",
-  "src/llama-memory-hybrid-idx.cpp": "c70578f570f08abe3777dd83040d4b5e8a5d73d6f7bb7eeb158e2b54003198ff",
-  "src/llama-memory-hybrid-idx.h": "6b2d549b812284b4b5843895ed6b27bc1c056a423b4837dfff4ff64891111dcb",
+  "src/llama-memory-hybrid-idx.cpp": "fbf336be84ee5495a24c176d9055f136f36b5414749fe10b120de0257a03a479",
+  "src/llama-memory-hybrid-idx.h": "505973de6ae49812bec468d12b0765daaf2d8d69ad2cfabec427991ce03a6dc9",
   "src/llama-memory-recurrent.cpp": "201b89af2e54b20800090392ba111e7ae29c2d991976040ba6f302e324f1f869",
   "src/llama-memory-recurrent.h": "f25504b3f27150834f9f74fc48b274e4b1dae3a9ebff7a557ad0a2486d93c369",
   "src/llama-model.cpp": "ee9b24fcd6227fea4e27dc5322fac0a08254d0483b1b0165767eabbabc9322dc",
   "src/llama-model.h": "934dfaf7862ed94699692cfe4d93f7a1fbd7b646d4577dbd0ba197ee2f953175",
-  "src/models/qwen4exp.cpp": "c86008771ccb5ed377ac2d32e001ffe0a54ee4f6d5a4b426d6c579f9b2558d8e",
+  "src/models/block-graph.inc": "716077d2dd61f3d7edb94945eaf1cd4aa2bb86f452eff22832d9cf279d55ec07",
+  "src/models/qwen4exp.cpp": "96da4dc392117286c4399b3712c1278072cca44f347ca1c52825f8a3c221caa1",
   "tests/test-backend-ops.cpp": "662e68c5eec293c8e52998dbb50954d4278aa628f0a028a36c7b518eae42e8fc",
   "tools/server/server-context.cpp": "e635a1beecc98548b9665cd52d90a2679813a83c8e8e75cb7a4ab7d97bf120bf",
   "tools/server/server-task.cpp": "fa8d94a5d3d983509fe600079bb4e920d0397ce717cb25eca2e2b27f33fa1aa4",
@@ -118,6 +119,10 @@
   "src/llama-model.h": {
    "git_blob": "f843f31921b97d78d8f411a60d170859eb964597",
    "sha256": "f7a62c9f424d4630b6b4bf66e873375aec35b32dcd3c8e94c95140450aca3546"
+  },
+  "src/models/block-graph.inc": {
+   "git_blob": "8f76f52e9ff27de80b5e11ce3d0874f8b1612c2e",
+   "sha256": "39a2b9e2e9775f2ee6f26a3ebea6dafdb6ee157562a016c52c4a3a211cb7f350"
   },
   "src/models/qwen4exp.cpp": {
    "git_blob": "eb7fb4df6eb46728a60a345e45b693552357000c",

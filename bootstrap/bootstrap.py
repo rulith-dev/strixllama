@@ -56,7 +56,7 @@ PATCH_ORDER = [
     "apply_spec_timing", "apply_decode_timing", "apply_iq3s_vecdot", "apply_node_timing",
     "apply_mmid_sort_note", "apply_ple_prefetch_launch", "apply_trunk_twins",
     "apply_iq3s_mmq_hip",           # after apply_iq3s_vecdot: it rewrites the sign table that one added
-    "apply_prompt_cache_disk",      # after apply_spec_timing and friends: anchors in the patched server loop
+    "apply_prompt_cache_disk", "apply_multi_stream_qsa",      # after apply_spec_timing and friends: anchors in the patched server loop
 ]
 
 # The ROCm SDK is installed as Python wheels, which is the only form AMD ships for Windows - the

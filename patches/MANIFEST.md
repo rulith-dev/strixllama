@@ -233,3 +233,24 @@ re-process a hybrid model's prompt from the start ("forcing full prompt re-proce
 cache data") - measured: restore in 0.5 s, then 38 s of prefill anyway. The RAM cache entry is the
 complete unit, so that is what goes to disk.
 
+
+## Addendum 2026-09-21: `apply_multi_stream_qsa`
+
+The delta is now 30 files (26 modified, 4 added); the replay reports 30 / 30. Four files, 38 hunks,
+last in the order because its anchors sit in text the earlier scripts wrote:
+
+| file | what |
+|---|---|
+| `src/llama-memory-hybrid-idx.h` | `qsa_mixed_inputs` (two membership inputs) threaded through `set_input_qsa_blocks` |
+| `src/llama-memory-hybrid-idx.cpp` | the block-key cache gap check per token and per sequence; `qsa_scalar_visibility` accepts several sequences; the compact fill writes `seq_blk` / `seq_tok` |
+| `src/models/block-graph.inc` | `qwen4exp_apply_compact_visibility` folds `seq_blk^T seq_tok` (exactly 0/1) into the visibility |
+| `src/models/qwen4exp.cpp` | the decode gather batched on the flash-attention sequence axis with f16 rows (limit 32 queries); the membership inputs built, set and checked for reuse; `dirty_max` grows with the sequence count |
+
+Why: with more than one slot the server's equal-length split puts several sequences in one ubatch.
+The sparse path declined those, so they ran dense attention over the whole pool (four users 35K
+deep: 28 tok/s together against 32 for one alone), a multi-stream step tripped the sticky block-key
+cache gap flag for every stream, and the mixed reserve graph kept a dense f16 mask of n_kv × ubatch
+that the driver would not fill at 262144 × 8192. Measured in `docs/results/concurrency-mtp-20260921.json`
+(`multi_stream_qsa_20260921`): four users 35K deep 33–39 tok/s, four slots at 262144 × 8192 load
+and cost 1.3 GB over one. `src/models/block-graph.inc` joins the upstream side of the delta
+(`bootstrap/UPSTREAM.json`).

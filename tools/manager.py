@@ -82,9 +82,6 @@ MMPROJ_NAME = 'mmproj-F16.gguf'
 # separately (enable_thinking=false). The template raises on anything outside low/medium/xhigh.
 THINKING = {'off': None, 'low': 'low', 'medium': 'medium', 'high': 'xhigh'}
 PORT = 8080
-# with more than one slot the mixed-sequence reserve keeps a dense f16 mask of context x ubatch;
-# 2 GiB of it works (131072 x 8192, 262144 x 4096), 3.9 GiB faults - see validate_profile()
-MULTI_SLOT_MASK_BYTES = 1 << 31
 # the disk tier of the server's prompt cache: at most this much under config/jan/prompt-cache
 PROMPT_CACHE_DISK_MIB = 16384
 HIDDEN = 0x08000000 if os.name == 'nt' else 0
@@ -122,13 +119,13 @@ ERRORS = {
     'thinking_level': 'Thinking depth must be one of {levels}',
     'draft_min': 'The MTP threshold must be between 0 and 1',
     'ubatch_gt_batch': 'ubatch cannot be larger than batch',
-    'multi_slot_ubatch': 'With more than one slot, ubatch must be at most {limit} at this context length',
     'context_exceeds': 'The context is longer than the model declares',
     'kv_fixed': 'This configuration keeps the KV cache at f16',
     'flash_attention_value': 'Flash Attention must be on or off',
     'draft_path': 'The draft model path is invalid',
     'mmproj_path': 'The vision projector path is invalid',
     'mmproj_missing': 'No vision projector ({name}) beside the model: add it, pick a file, or turn image input off',
+    'vision_single_slot': 'Image input needs a single slot: set parallel to 1 or turn image input off',
     'qsa_architecture': 'Sparse attention (QSA) applies to Qwen3.8 Flash Next (qwen4exp) only',
     'qsa_needs_fa': 'Sparse attention (QSA) needs Flash Attention on',
     'mtp_architecture': 'MTP is enabled for qwen4exp models only',
@@ -528,20 +525,17 @@ def validate_profile(raw, model):
     if cfg['thinking'] not in THINKING: fail('thinking_level', levels=', '.join(THINKING))
     if type(cfg['draft_min']) not in (int,float) or not 0 <= cfg['draft_min'] <= 1: fail('draft_min')
     if cfg['ubatch'] > cfg['batch']: fail('ubatch_gt_batch')
-    # More than one slot means ubatches that mix sequences, which the sparse attention path declines,
-    # so the reserve keeps a dense f16 mask of n_ctx x ubatch. At 4 GiB (262144 x 8192) the driver
-    # will not fill it (a sticky launch failure at load); at 3.9 GiB (ubatch 7936) it loads and the
-    # first mixed prefill faults in a MUL_MAT; at 2 GiB (131072 x 8192, 262144 x 4096) and below it
-    # loads, decodes four streams and prefills 34K tokens (docs/results/concurrency-mtp-20260921.json).
-    # The full context stays available to several slots - the ubatch is what has to give.
-    if cfg.get('parallel', 1) > 1 and 2 * cfg['context'] * cfg['ubatch'] > MULTI_SLOT_MASK_BYTES:
-        fail('multi_slot_ubatch', limit=MULTI_SLOT_MASK_BYTES // (2 * cfg['context']) // 256 * 256)
     if model.get('context') and cfg['context'] > model['context']: fail('context_exceeds')
     if cfg['kv'] != 'f16': fail('kv_fixed')
     if cfg['flash_attention'] not in ('on', 'off'): fail('flash_attention_value')
     if not isinstance(cfg['draft'], str): fail('draft_path')
     if not isinstance(cfg['mmproj'], str): fail('mmproj_path')
     if cfg['vision']:
+        # An image's cells repeat one position (M-RoPE) and run ahead of their cells, so the sparse
+        # attention's block enumeration has to rank them, and it can only do that while the cache holds
+        # one sequence: with two conversations resident an image aborts the server in set_input_qsa
+        # (`oor`). Several slots therefore exclude image input until that path exists.
+        if cfg.get('parallel', 1) > 1: fail('vision_single_slot')
         # a path the user picked goes through the full check (it must sit in a registered model root);
         # the automatic one ships beside the model, so only its existence matters
         if cfg['mmproj']: checked_file(cfg['mmproj'])

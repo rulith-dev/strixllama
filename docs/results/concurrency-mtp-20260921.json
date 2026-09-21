@@ -360,5 +360,45 @@
    "after four 35K prefills": "dedicated 79.52, shared 10.85"
   },
   "reading": "at long context concurrency is negative today: four users at 35K each get 28 tok/s together, less than one user alone (32), and each waits 99 ms per token instead of 29. The short-context four-stream figure (47 tok/s here, 58 at ctx 65536) is what the same four users would get if their attention stayed sparse, because attention is the only per-token cost that grows with the depth; that gap - 1.7-2x aggregate and a third of the latency at four users, 22 -> ~40 tok/s at two - is what a multi-stream (mixed-sequence) QSA path would return, on top of removing the dense mask reserve (2 GiB at ubatch 4096, 8 GB at 8192), the 2 GiB ubatch rule and the multi-slot prefill loss (765 -> 873 t/s). It would not move the single-user number or the expert-bandwidth ceiling of ~60-70 tok/s aggregate."
+ },
+ "multi_stream_qsa_20260921": {
+  "change": "patches/apply_multi_stream_qsa.py (fork commit 72cce52): mixed-sequence ubatches take the sparse path",
+  "what_was_wrong": {
+   "gap_check": "the block-key cache gap check compared a ubatch first token position with its last token position as if they were one sequence; a multi-stream decode step tripped it, the flag is sticky, and the cache stayed off for every stream (every block key rebuilt each step: ROPE 5.7 ms and GET_ROWS over the pool per target graph, single stream 28.9 -> 31.2 ms/token afterwards)",
+   "gather_limit": "the decode gather took at most 8 queries; a 4-stream verify step has 16, so it ran dense attention over the whole used pool with the mask (FLASH_ATTN_EXT 40 ms per target graph at 4 x 35K, graphs off)",
+   "gather_traffic": "ggml_get_rows only returns f32, so each gathered f16 row was written as f32, read back and cast: twice the bytes",
+   "reserve": "a mixed ubatch was never scalar, so its graph - the reserve graph included - carried a dense f16 mask of n_kv x n_tokens and a f32 block bias of n_blocks x n_tokens: 3 GB at 262144 x 4096, and the 4 GiB mask at 8192 the driver would not fill"
+  },
+  "what_changed": {
+   "gap_check": "per token and per sequence",
+   "gather": "one gather and one flash-attention call per layer with every query on the kernel sequence axis (ne[3]), f16 rows through a GET_ROWS node built with an f16 destination (the CUDA kernel already casts to whatever the destination is); limit 32 queries",
+   "mixed_compact": "qsa_scalar_visibility accepts several sequences (one per token, no image or gap in the cache); set_input_qsa_impl fills two membership inputs, seq_blk [n_seqs_unq, n_blocks] and seq_tok [n_seqs_unq, n_tokens]; qwen4exp_apply_compact_visibility multiplies them (seq_blk^T seq_tok, exactly 0/1) into the visibility, so mixed decode and mixed prefill take the compact, maskless path; dirty_max grows with the sequence count",
+   "manager": "the multi_slot_ubatch rule is gone (no dense mask to size); image input requires a single slot (vision_single_slot), because an image needs the ranked block enumeration, which only a single-sequence cache gets - with two conversations resident an image aborts the server in set_input_qsa (oor)"
+  },
+  "method": "tmp/mstream_longctx_probe2.py, mstream_agree_probe.py, mstream_first_probe.py, mstream_prefill_probe.py, mstream_depth_timing.py, vision_dev.py, decode_ab.py; fresh build (src/llama.cpp/build/bin) against the 0.1.4 runtime, -np 4, ctx 262144, unified KV, MTP draft 3, four ~35K prefixes (docs/*.md repeated, distinct header per stream)",
+  "decode_at_35K_per_stream_ubatch_4096": {
+   "1 stream": "26.8-28.7 ms/token (was 28.9-29.2)",
+   "2 streams": "33.4-33.7 tok/s aggregate, 40-47 ms/token per stream (was 22.1, 50-54)",
+   "4 streams": "33.2-39.0 tok/s aggregate, 70-87 ms/token per stream (was 24.0-28.3, 95-124)",
+   "1 stream after mixed runs": "28.6-29.1 ms/token (was 31.2: the sticky gap flag)",
+   "4 streams short context, same server": "47.7-53.1 tok/s (was 43.2-46.9)"
+  },
+  "gpu_GB_after_load": {
+   "np4 262144 ubatch 4096": "dedicated 77.67, shared 1.28 (was 78.62 / 10.20)",
+   "np4 262144 ubatch 8192": "dedicated 79.20, shared 1.40 (was: refused, 4 GiB mask)",
+   "np1 262144 ubatch 8192": "dedicated 77.89, shared 1.47",
+   "reading": "four slots cost 1.3 GB over one at the production ubatch; the manager rule is gone"
+  },
+  "mixed_prefill": {
+   "two 17.7K prompts at once, ubatch 4096": "379 + 422 t/s (alone 764 / 793); first-token top logprobs match alone, 16-token greedy continuations identical",
+   "two 17.7K prompts at once, ubatch 8192": "559 + 435 t/s (alone 841 / 891); identical continuations in 3 of 4 runs, the fourth diverged at token 6 with the same top token (batch numerics)"
+  },
+  "correctness": {
+   "mixed decode": "greedy 24-token continuations identical to the single-stream ones where the first token is not a near tie; top-5 logprobs of the 21st token agree within 0.15 nats alone / 2-stream / 4-stream / while three others decode; each configuration is deterministic run to run",
+   "near ties": "the question-tail step (4 tokens per sequence) leaves a first token whose tail logprobs differ by nats between alone and mixed; the dense reference (gather off) shows the same nats of run-to-run jitter on its own, so this is the pipeline numerics at that step, not the path",
+   "images": "tools/vision_stress.py STRESS OK at -np 1 on the fresh build",
+   "A/B short context": "np1 MTP 27.1/27.6/27.1 -> 26.3/27.4/26.9 ms/token; np4 MTP 61.3/60.5 -> 58.6/60.5 tok/s aggregate: unchanged"
+  },
+  "what_is_left": "per target graph at 4 x 35K (graphs off): the gather GET_ROWS 6.6 ms (16 x 2304 rows x K and V) and the FLASH_ATTN_EXT 6.5 ms (one query per sequence slab, tile kernel) against 3.4 + 1.2 at short context; the rest of the depth cost is the routed experts, which the four different conversations touch more of than four copies of one prompt do (MUL_MAT_ID 26.6 + 15.6 vs 18.2 + 10.3 ms). The GDN cost per sequence (7.5 ms at 4 streams) and the draft context KV are unchanged. Images with more than one slot need the ranked enumeration to work on a multi-sequence cache."
  }
 }

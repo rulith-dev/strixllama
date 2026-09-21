@@ -40,7 +40,7 @@ python tools/manager.py <<< '{"op":"start","data":{"id":"<model-id>"}}'
 ```
 
 `bootstrap.py` clones `pwilkin/llama.cpp` at a pinned revision, applies the patch set, and builds
-against the ROCm SDK. The same 29-file delta is also published as one commit on a fork, so it can be
+against the ROCm SDK. The same 30-file delta is also published as one commit on a fork, so it can be
 read as a plain diff: [rulith-dev/llama.cpp, branch `strixllama`](https://github.com/rulith-dev/llama.cpp/tree/strixllama). `tools/manager.py` is a JSON-on-stdin process manager: it owns the launch
 flags, the environment gates and the runtime, so a configuration is reproducible rather than
 remembered.
@@ -57,7 +57,7 @@ Optional: `integrations/jan/apply.py` overlays three management pages into a
 
 ## What is actually in here
 
-The whole delta against upstream llama.cpp is **29 files** — 25 modified, 4 added, out of 3610. The
+The whole delta against upstream llama.cpp is **30 files** — 26 modified, 4 added, out of 3610. The
 substantial pieces:
 
 | | |
@@ -84,12 +84,12 @@ happily if the tree was edited by hand and re-recorded afterwards. The strong qu
 recipe still rebuilds the tree from nothing, and that has its own tool:
 
 ```bash
-python tools/replay_bootstrap.py          # clean upstream + patch set == the 29 files, byte for byte
+python tools/replay_bootstrap.py          # clean upstream + patch set == the 30 files, byte for byte
 ```
 
-It restores the 25 modified files to upstream from the clone's own git objects, addressed by the blob
+It restores the 26 modified files to upstream from the clone's own git objects, addressed by the blob
 hashes in `bootstrap/UPSTREAM.json` — so clean upstream is reconstructed rather than trusted — then
-replays the snapshot and every script and compares. It reports **29 / 29**.
+replays the snapshot and every script and compares. It reports **30 / 30**.
 
 It was not always so. Five of the 24 were owned by no script at all - including the largest measured
 win in the project, which a clean rebuild would have silently dropped - and three scripts had drifted

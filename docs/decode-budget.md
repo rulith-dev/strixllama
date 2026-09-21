@@ -91,16 +91,18 @@ For the same reason a Q4_K_M draft body beats Q8_0 by under 1% and saves 880 MB 
   `apply_iq3s_mmq_hip` (eight users with MTP 60.5 → 70.1 tok/s; one user unchanged). The
   per-token costs that do grow with users are the GDN recurrent state (fp32, ~3 MB per sequence per
   layer, read and written every step: 15 ms of a 112 ms eight-user step), the PLE gather and the
-  per-token projections. Also: with more than one slot the mixed-sequence reserve keeps a dense f16 mask of
-  n_ctx × ubatch, exactly 4 GiB at 262144 × 8192, which the driver refuses to fill; at 3.9 GiB
-  (ubatch 7936) it loads but the first mixed prefill faults, and at 2 GiB (131072 × 8192 or
-  262144 × 4096) it loads, decodes and prefills. The manager therefore requires
-  context × ubatch × 2 ≤ 2 GiB whenever `parallel > 1` and names the ubatch to set; at ubatch
-  2048 four slots cost ~1.6 GB over one at 131072 and prefill 18% slower (873 → 717 t/s). Those ubatches take the dense
-  attention path, so the multi-stream QSA work this would need is worth at most that 1.5–1.9×.
-  **Measured at depth (2026-09-21):** with four slots each holding a 35K prefix, a mixed-sequence step
-  runs dense attention over the whole used pool, and four users get 28.3 tok/s together at 99 ms/token
-  each — less than one user alone (31.7 tok/s, 28.9 ms/token on the sparse gather path); two users get
-  22.1. At short context the same four streams give 47 tok/s. That gap, plus the dense mask reserve and
-  the ubatch rule, is what a mixed-sequence sparse path is worth
-  (`docs/results/concurrency-mtp-20260921.json`, `multi_stream_long_context_20260921`).
+  per-token projections. **At depth, several users used to be a loss** (2026-09-21): a ubatch that
+  serves several slots carries several sequences, the sparse path declined it, and it ran dense
+  attention over the whole used pool, while a multi-stream step also tripped the block-key cache's
+  gap check for good. Four users 35K deep got 28.3 tok/s together at 99 ms/token each, less than one
+  alone (31.7). `apply_multi_stream_qsa` keeps mixed ubatches on the sparse path — a per-sequence gap
+  check, one batched f16 gather and attention call per layer for up to 32 queries, and membership
+  inputs that tell the compact scorer which sequence owns each block — and four users 35K deep now
+  get 33–39 tok/s at 70–87 ms/token, two get 34 (was 22), one is 7% faster at depth (26.8 ms). The
+  same change takes the dense n_kv × n_tokens mask out of the mixed reserve graph: four slots at
+  262144 × 8192 load and cost 1.3 GB over one, where 4096 used to cost 9 GB and 8192 did not load,
+  so the manager's ubatch rule is gone. What is left at depth is the gather itself (16 × 2304 rows,
+  6.6 ms per target graph) and one attention call per sequence slab (6.5 ms); image input needs a
+  single slot, because an image's cells need the ranked block enumeration, which only a
+  single-sequence cache gets (`docs/results/concurrency-mtp-20260921.json`,
+  `multi_stream_qsa_20260921`).
