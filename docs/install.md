@@ -99,7 +99,7 @@ file the patch set adds or renames is invisible to an existing `build.ninja`.
 Check it against the recipe:
 
 ```bash
-python tools/replay_bootstrap.py     # clean upstream + patch set == the 27 files. Expect 27 / 27.
+python tools/replay_bootstrap.py     # clean upstream + patch set == the 29 files. Expect 29 / 29.
 ```
 
 ## 5. Model files
@@ -169,6 +169,19 @@ get the claimed performance. On a carve this does not fit, the load falls back t
 (next section) rather than failing; a smaller context is the setting to change if that is too
 slow. Sparse attention has to stay on above ~64K: dense attention runs out of memory there, and it
 is slower below it.
+
+### Conversations come back from disk
+
+The server's RAM prompt cache (`--cache-ram`, on by default) keeps a finished conversation's
+tokens, state and recurrent checkpoints so it can be resumed on a later request; with
+`prompt_cache_disk` (default on, the *Keep conversation state on disk* switch) every such entry is
+also written under `config/jan/prompt-cache` and read back on a RAM miss, up to 16 GB, oldest
+first — so the cache survives restarts and many conversations. On this model a 34K-token session
+is 1.3–1.7 GB and reads back in about 1.4 s; the next turn then processes its own tokens only
+(13 against 33911, 0.6 s against 38 s). A restored state continues exactly as the live slot would
+(`docs/results/concurrency-mtp-20260921.json`, `prompt_cache_disk`). Conversations with images are
+not persisted. The slot save/restore endpoints are not a substitute: they carry the state but not
+the checkpoints, and without one a hybrid model re-processes the whole prompt.
 
 ### Shared GPU memory is decided per load, not by a switch
 

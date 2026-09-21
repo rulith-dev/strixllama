@@ -216,3 +216,20 @@ been applied, and to replay its own output against the before-tree before writin
 version of this script had four anchors in one loop body, of which the second no longer matched once
 the first had been applied.
 
+## Addendum 2026-09-21: `apply_prompt_cache_disk`
+
+The delta is now 29 files (25 modified, 4 added); the replay reports 29 / 29. Three files, last in
+the order because its server-loop anchors sit in text earlier scripts wrote:
+
+| file | what |
+|---|---|
+| `tools/server/server-task.h` | `server_prompt_cache` gains a disk tier: an index of on-disk entries, `set_disk`, `persist`, `load_from_disk` |
+| `tools/server/server-task.cpp` | the file format (tokens, target and draft state, checkpoints), writing on every RAM-cache insert, prefix-matched reads on a RAM miss, size-bounded eviction oldest first |
+| `tools/server/server-context.cpp` | `STRIX_PROMPT_CACHE_DIR` / `STRIX_PROMPT_CACHE_MIB` wire it up after the RAM cache is created; `prompt_save` persists what it just captured |
+
+Why it is a tier under the RAM cache and not a slot-file feature: the slot save/restore endpoints
+carry the state but not the recurrent checkpoints, and without a checkpoint the server has to
+re-process a hybrid model's prompt from the start ("forcing full prompt re-processing due to lack of
+cache data") - measured: restore in 0.5 s, then 38 s of prefill anyway. The RAM cache entry is the
+complete unit, so that is what goes to disk.
+

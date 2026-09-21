@@ -32,7 +32,9 @@
   "src/llama-model.h": "934dfaf7862ed94699692cfe4d93f7a1fbd7b646d4577dbd0ba197ee2f953175",
   "src/models/qwen4exp.cpp": "c86008771ccb5ed377ac2d32e001ffe0a54ee4f6d5a4b426d6c579f9b2558d8e",
   "tests/test-backend-ops.cpp": "662e68c5eec293c8e52998dbb50954d4278aa628f0a028a36c7b518eae42e8fc",
-  "tools/server/server-context.cpp": "972f91c352f7f91a44944d5d196e1a668a1ef139c78095772bf12fe084b8d31b"
+  "tools/server/server-context.cpp": "e635a1beecc98548b9665cd52d90a2679813a83c8e8e75cb7a4ab7d97bf120bf",
+  "tools/server/server-task.cpp": "fa8d94a5d3d983509fe600079bb4e920d0397ce717cb25eca2e2b27f33fa1aa4",
+  "tools/server/server-task.h": "7b4377f9e5c02fea5a881cebfcd50b6db309b8eb08d0fe99488bedc5eb9a5147"
  },
  "repo": "https://github.com/pwilkin/llama.cpp",
  "revision": "f5daaa3cfa6358e5dd398911ec741813745a5440",
@@ -128,6 +130,14 @@
   "tools/server/server-context.cpp": {
    "git_blob": "b6835e43459e3e9f1ea951e9f96f9ade22074cba",
    "sha256": "2f5d65ce6ef0504b5c8cf55a74c68d3959c49784ba380ef836566b7a7d5fa12b"
+  },
+  "tools/server/server-task.cpp": {
+   "git_blob": "0d3beb313ceabbb903de57d185140a8e5a079e4b",
+   "sha256": "0fd5c8df2525e61214986e8abe3fc4edbb92f5dd652c9c2bfd1bc2712218a585"
+  },
+  "tools/server/server-task.h": {
+   "git_blob": "9c99143f8e1983f2cbe45245d68d8e5937b7f6c6",
+   "sha256": "413733f2c47897e9a531dbc382a72e7676d46164d92996da1f008185f059bcf2"
   }
  }
 }

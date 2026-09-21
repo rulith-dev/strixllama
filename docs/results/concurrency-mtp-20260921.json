@@ -296,5 +296,13 @@
    }
   },
   "reading": "no gain that survives the noise (+5% at two streams, -6% at four, -3% at eight, run-to-run spread of the same size). With apply_iq3s_mmq_hip the fixed draft of 3 is no longer worse than no draft at eight streams (71.8 against 72.7), so the earlier 'past four users turn MTP off' no longer holds either - it was a symptom of the 24+ token cliff. Dropped; the fixed draft of 3 stays at every stream count."
+ },
+ "prompt_cache_disk_20260921": {
+  "question": "how much of a returning conversation's prefill can a disk cache save on this model, and is a restored state faithful?",
+  "state_size": "30.5 KB per token: a 34K-token session is 1.06 GB of state plus 113 MB per recurrent checkpoint (one every 8192 prompt tokens), 1.3-1.7 GB on disk",
+  "slot_save_restore_alone": "the /slots save and restore endpoints carry the state (0.9 s to write, 0.5 s to read) but not the checkpoints, and a hybrid model cannot resume without one: the next turn was re-processed in full (38 s) - 'forcing full prompt re-processing due to lack of cache data'",
+  "disk_tier": "patch apply_prompt_cache_disk: every RAM prompt-cache entry (tokens, state, checkpoints) is also written under STRIX_PROMPT_CACHE_DIR; a RAM miss is looked up on disk with the RAM cache's own prefix criteria. tmp/prompt_cache_probe.py: two 34K sessions alternating on one slot - first turns 38.5 / 37.5 s (33911 tokens), second turns 341 / 353 ms (14 tokens, RAM tier); server restarted, third turns 648 / 628 ms (13 / 50 tokens, read from disk in 1.45 / 1.22 s) against 38.9 s from scratch",
+  "faithfulness": "greedy strings differed between a from-scratch run and the cached paths, so the first token's log-probabilities were compared instead (tmp/state_probs_probe.py): live slot, RAM-cache restore and disk-cache restore are identical to three decimals (top-5: -0.000, -13.297, -14.544, -15.037, -17.252); the from-scratch run differs (-0.000, -10.945, -11.506, -11.671, -11.772) with the same top token. The restore is exact; what differs is processing the last 13 tokens as a 14-token batch against inside an 8192-token prefill batch - the batch-size numerics this codebase has always had. So a cached conversation continues exactly as it would have on its own slot.",
+  "manager": "profile prompt_cache_disk (default on), config/jan/prompt-cache, PROMPT_CACHE_DISK_MIB 16384, oldest first; Configuration page switch 'Keep conversation state on disk'"
  }
 }

@@ -84,6 +84,8 @@ THINKING = {'off': None, 'low': 'low', 'medium': 'medium', 'high': 'xhigh'}
 PORT = 8080
 # the longest context more than one slot can serve; see validate_profile()
 MULTI_SLOT_CONTEXT = 131072
+# the disk tier of the server's prompt cache: at most this much under config/jan/prompt-cache
+PROMPT_CACHE_DISK_MIB = 16384
 HIDDEN = 0x08000000 if os.name == 'nt' else 0
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -192,7 +194,13 @@ DEFAULTS = dict(context=262144, gpu_layers=999, threads=16, batch=8192, ubatch=8
                 parallel=1,
                 # trunk_decode_q6k: Q6_K in-memory copies of the Q8_0 trunk for decode-sized batches (HIP);
                 # +2.9 GB VRAM, prefill untouched, decode -9%. Off by default so smaller carves still load.
-                trunk_decode_q6k=False)
+                trunk_decode_q6k=False,
+                # prompt_cache_disk: the server's prompt cache gets a disk tier (config/jan/prompt-cache,
+                # PROMPT_CACHE_DISK_MIB). A finished conversation's state - ~30 KB per token for this model,
+                # checkpoints included - is written when its slot is reused and read back when the
+                # conversation returns, so it skips the prefill: a 34K-token session reads back in well
+                # under a second against ~40 s of prefill. Survives restarts.
+                prompt_cache_disk=True)
 
 
 def read_json(path, default):
@@ -512,7 +520,7 @@ def validate_profile(raw, model):
     bounds = dict(context=(512,262144), gpu_layers=(0,999), threads=(1,32), batch=(32,32768), ubatch=(32,32768), draft_max=(1,8), parallel=(1,8))
     for field, (low, high) in bounds.items():
         if type(cfg[field]) is not int or not low <= cfg[field] <= high: fail('out_of_range', field=field, low=low, high=high)
-    for field in ('mtp', 'ngram_spec', 'qsa', 'shared_vram', 'trunk_decode_q6k', 'vision'):
+    for field in ('mtp', 'ngram_spec', 'qsa', 'shared_vram', 'trunk_decode_q6k', 'vision', 'prompt_cache_disk'):
         if type(cfg[field]) is not bool: fail('not_boolean', field=field)
     # thinking was a switch before it was a level; a profile saved back then still loads
     if type(cfg['thinking']) is bool: cfg['thinking'] = 'high' if cfg['thinking'] else 'off'
@@ -659,6 +667,10 @@ def runtime_environment(cfg, unified=False):
     # read 23% fewer trunk bytes; prefill keeps the Q8_0 originals. No UI control - measured
     # prefill-neutral and 4% on decode for 2.9 GB, and at ctx 262144 it can stop a long prompt loading.
     env['LLAMA_TRUNK_DECODE_Q6K'] = '1' if cfg.get('trunk_decode_q6k', False) else '0'
+    # the server's prompt cache gets a disk tier (see DEFAULTS); the directory lives with the settings
+    if cfg.get('prompt_cache_disk', False):
+        env['STRIX_PROMPT_CACHE_DIR'] = str(DATA / 'prompt-cache')
+        env['STRIX_PROMPT_CACHE_MIB'] = str(PROMPT_CACHE_DISK_MIB)
     if not bundled_rocm():
         env['PATH'] = str(ROCM_BIN) + os.pathsep + os.environ.get('PATH', '')
     return env

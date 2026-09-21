@@ -122,6 +122,9 @@ hf download unsloth/Qwen3.8-Flash-Next-GGUF --local-dir D:\models\unsloth\Qwen3.
 | 85K token 上下文 | 约 35 tok/s，预填充约 890 t/s |
 | 同机同模型的 LM Studio | 约 18 tok/s |
 
+过一阵子回到某个对话时不会重新处理它的提示词：对话状态会存在磁盘上（每 token 约 30 KB，最多 16 GB，配置页的
+"对话状态存盘"开关），回来时一秒左右读回。
+
 如果加载时提示改用了共享显存，说明专用显存对这个配置不够：去 BIOS 加大划分，或者在配置页调小
 上下文长度。
 

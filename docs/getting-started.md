@@ -135,6 +135,10 @@ What to expect, measured on the reference machine:
 | 85K tokens of context | about 35 tok/s, prefill about 890 t/s |
 | LM Studio, same machine, same model | about 18 tok/s |
 
+A conversation you come back to later is not processed again: its state is kept on disk (about
+30 KB per token, up to 16 GB, the *Keep conversation state on disk* switch on the Configuration
+page) and read back in about a second.
+
 If the load reports that it fell back to shared memory, the dedicated carve was too small for this
 configuration: raise the carve in the BIOS, or lower the context length on the Configuration page.
 

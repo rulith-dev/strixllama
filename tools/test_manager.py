@@ -446,6 +446,12 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual((caught.exception.code,caught.exception.params),('out_of_range',{'field':'context','low':512,'high':262144}))
         self.assertIn('between 512 and 262144',str(caught.exception))
         for code in m.ERRORS: m.ERRORS[code].format(**{k:'' for k in ('field','low','high','levels','name','head','base','limit')})
+    def test_disk_prompt_cache_is_a_switch_that_sets_the_server_environment(self):
+        on=m.runtime_environment(m.validate_profile({'mtp':False},self.model))
+        self.assertEqual(Path(on['STRIX_PROMPT_CACHE_DIR']),m.DATA/'prompt-cache');self.assertEqual(on['STRIX_PROMPT_CACHE_MIB'],str(m.PROMPT_CACHE_DISK_MIB))
+        off=m.runtime_environment(m.validate_profile({'mtp':False,'prompt_cache_disk':False},self.model))
+        self.assertNotIn('STRIX_PROMPT_CACHE_DIR',off)
+        with self.assertRaises(ValueError):m.validate_profile({'prompt_cache_disk':'yes'},self.model)
     def test_more_than_one_slot_stops_at_the_context_it_can_serve(self):
         # the mixed-sequence reserve's dense mask is 4 GiB at 262144 x 8192 and the first mixed prefill
         # faults even when the ubatch is reduced; 131072 loads and serves. One slot is unaffected.

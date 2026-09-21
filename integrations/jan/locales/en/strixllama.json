@@ -90,7 +90,9 @@
       "length": "Context length",
       "lengthHelp": "Token capacity reserved at load time",
       "gpuLayers": "GPU layers",
-      "gpuLayersHelp": "999 offloads as many layers as fit"
+      "gpuLayersHelp": "999 offloads as many layers as fit",
+      "promptCacheDisk": "Keep conversation state on disk",
+      "promptCacheDiskHelp": "When a conversation leaves the server it is written to disk (about 30 KB per token, up to 16 GB, oldest removed first) and read back when it returns, so its prompt is not processed again — a 34K-token session comes back in under a second instead of 40 seconds of prefill. Survives restarts. Applies on the next load."
     },
     "speculative": {
       "title": "Speculative decoding",
