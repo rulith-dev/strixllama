@@ -213,9 +213,11 @@
   },
   "reading": "In the production configuration (one user, MTP, 4-7 tokens per verify) the expert kernels were already near the ceiling - the earlier '110 GB/s' came from attributing every per-token cost to the experts; the per-token costs that actually grow with the batch are the GDN state traffic (fp32 recurrent state, ~3 MB per sequence per layer, read and written every step), the PLE gather, and the per-token projections. What was kernel-bound was IQ3_S in MMQ (the multi-user regime) and the tiling cliff above 16 tokens; both are fixed. The remaining IQ3_S gap to IQ4_NL (157 vs ~190) is the format's unpacking, not memory.",
   "not_done": [
-   "mmvq IQ3_S at 1-4 tokens is 15% slower per byte than IQ4_NL (cache-hot 327 vs 388); it is the single user's path and would be worth ~3 ms of a 64 ms pass",
    "GDN recurrent state in bf16 instead of fp32 would halve the per-sequence traffic that makes 8 streams cost 15 ms per step in GATED_DELTA_NET; numerics untested",
    "the -np 4 at context 262144 load failure"
+  ],
+  "tried_and_dropped": [
+   "mmvq IQ3_S vec-dot with one dp4a per word (signed bytes by xor+add) instead of the two the sign split needs: 913/913 correct, no change at n=1/4/8 (295/332/150 GB/s-equivalent against 282-336 before). The cache-hot n<=4 figures already exceed DRAM bandwidth, so the single user's gate/up kernels are memory-bound as they stand; the 15% per-byte gap to IQ4_NL on a hot cache does not reach the wall clock. Reverted."
   ]
  }
 }
