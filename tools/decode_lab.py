@@ -34,7 +34,8 @@ def default_model_id():
     """The model to probe: whatever the manager's catalog lists first, unless --model says otherwise.
 
     A model id is a hash of the file's location, so it is specific to one machine and cannot be a
-    constant in the source.
+    constant in the source. The first model is not necessarily the one under study - with other
+    models on disk it is whichever sorts first - so pass --model and read the "model:" line.
     """
     found = call("catalog", {}).get("data", {}).get("models", [])
     # role, because the catalog also lists draft heads and vision projectors and sorts them first
@@ -209,6 +210,8 @@ def main():
                 k, v = kv.split("=", 1)
                 pr[k] = parse(v)
             m = manager.model_by_id(model_id)
+            # the default is the catalog's first model, which is whatever sorts first on this machine
+            print("  model: %s" % m["path"])
             cfg = manager.validate_profile(pr, m)
             cmd = manager.argv(m, cfg)
             if args.runtime:

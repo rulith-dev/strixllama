@@ -1,0 +1,86 @@
+{
+ "question": "where a Flash-Next prefill spends its time, and what the ideas published by halogen, pwilkin and halo-box would buy on this file",
+ "setup": "production profile (ctx 262144, batch = ubatch 8192, MTP draft ubatch 2048, QSA on), model Qwen3.8-Flash-Next-UD-IQ4_XS, launched by tools/decode_lab.py --model <id>; node timing needs HIP graphs off and brackets every dispatch with events, graph timing synchronises after every graph, so both arms read ~2-4% slower than production (853.8 t/s here against 886 measured before at 85K)",
+ "real_text_prefill": {
+  "prompt": "tmp/realtext.txt: llama.cpp docs, READMEs and src/llama-*.cpp, 340000 chars = 95582 tokens",
+  "result": "95582 tokens in 110.4 s = 866 t/s (STRIX_DECODE_TIMING + LLAMA_GRAPH_TIMING)",
+  "per_8192_batch": "target GPU 7.7 -> 9.4 s as depth grows; set_inputs 0.20-0.70 s with the GPU idle (most likely the PLE row gather - hashed n-gram rows per token read from the 28.8 GB table on disk; not timed on its own; the prefetch only sees the batch it is in, and batch = ubatch); graph build + alloc 0.04-0.15 s; then the MTP draft prefills the same 8192 tokens in four 2048-token ubatches, 0.29-0.45 s, 65 ms of it prep on the CPU",
+  "shares": {
+   "target compute": "99.0 s = 90%",
+   "target set_inputs": "5.23 s = 4.7%",
+   "target graph": "0.78 s = 0.7%",
+   "draft prefill": "4.35 s = 3.9% (prep 0.77 s)"
+  }
+ },
+ "gpu_per_op": {
+  "note": "random-word prompt (tools/decode_lab.py), 78939 tokens after a 2329-token prefix; kinds aggregated by op and shape, the time of a fused group charged to its first node",
+  "first_ubatch_depth_2.3K": {
+   "graph": "17487 nodes, 4897 dispatches, 7592 ms of GPU time",
+   "top": [
+    "  1483.4 ms   49 x MUL_MAT_ID [640,10,8192,1]",
+    "   625.0 ms  133 x MUL_MAT [10240,8192,1,1]",
+    "   608.8 ms   48 x MUL_MAT_ID [2560,10,8192,1]",
+    "   573.9 ms   96 x SCALE [4,8192,1,1]",
+    "   470.1 ms   36 x GATED_DELTA_NET [6144,8704,1,1]",
+    "   465.8 ms   97 x MUL_MAT [2560,8192,1,1]",
+    "   375.5 ms   12 x FLASH_ATTN_EXT [256,24,8192,1]",
+    "   359.5 ms   36 x RMS_NORM [128,48,8192,1]",
+    "   359.2 ms   96 x MUL_MAT [4,8192,1,1]",
+    "   353.9 ms   96 x MUL_MAT [320,8192,1,1]",
+    "   344.0 ms   96 x UNARY SIGMOID [10240,8192,1,1]",
+    "   161.0 ms   12 x MUL_MAT [12288,8192,1,1]",
+    "   136.2 ms   84 x MUL_MAT [512,8192,1,1]",
+    "   127.5 ms   48 x MUL [2560,10,8192,1]",
+    "   122.3 ms   36 x SSM_CONV [10240,8192,1,1]",
+    "    88.4 ms   96 x MUL_MAT [640,8192,1,1]",
+    "    86.5 ms   72 x MUL_MAT [48,8192,1,1]",
+    "    80.6 ms   48 x ADD [2560,8192,1,1]",
+    "    70.6 ms   72 x RMS_NORM [128,16,8192,1]",
+    "    40.4 ms   72 x SCALE [128,16,8192,1]",
+    "    39.6 ms   12 x CONT [6144,8192,1,1]",
+    "    37.2 ms   12 x RMS_NORM [256,24,8192,1]",
+    "    35.3 ms   12 x UNARY SIGMOID [6144,8192,1,1]",
+    "    32.5 ms   48 x MUL [2560,8192,1,1]"
+   ]
+  },
+  "last_ubatch_depth_73K": {
+   "graph": "17511 nodes, 4909 dispatches, 9151 ms of GPU time",
+   "top": [
+    "  1559.2 ms   49 x MUL_MAT_ID [640,10,8188,1]",
+    "   640.8 ms   48 x MUL_MAT_ID [2560,10,8188,1]",
+    "   634.0 ms  133 x MUL_MAT [10240,8188,1,1]",
+    "   588.9 ms   12 x FLASH_ATTN_EXT [256,24,8188,1]",
+    "   576.0 ms   96 x SCALE [4,8188,1,1]",
+    "   566.1 ms   36 x GATED_DELTA_NET [6144,8700,1,1]",
+    "   480.2 ms   97 x MUL_MAT [2560,8188,1,1]",
+    "   370.7 ms   96 x MUL_MAT [4,8188,1,1]",
+    "   369.0 ms   36 x RMS_NORM [128,48,8188,1]",
+    "   354.3 ms   96 x MUL_MAT [320,8188,1,1]",
+    "   340.3 ms   96 x UNARY SIGMOID [10240,8188,1,1]",
+    "   247.4 ms  180 x TOP_K [512,512,1,1]",
+    "   162.2 ms   12 x MUL_MAT [12288,8188,1,1]",
+    "   133.7 ms   48 x MUL [2560,10,8188,1]",
+    "   126.5 ms   84 x MUL_MAT [512,8188,1,1]",
+    "   122.4 ms   36 x SSM_CONV [10240,8188,1,1]",
+    "    90.5 ms   96 x MUL_MAT [640,8188,1,1]",
+    "    89.4 ms   72 x MUL_MAT [48,8188,1,1]",
+    "    77.9 ms   48 x ADD [2560,8188,1,1]",
+    "    71.5 ms   72 x RMS_NORM [128,16,8188,1]",
+    "    56.5 ms   24 x CONT [256,81408,2,1]",
+    "    41.3 ms   12 x CONT [6144,8188,1,1]",
+    "    40.2 ms   72 x SCALE [128,16,8188,1]",
+    "    37.3 ms   12 x RMS_NORM [256,24,8188,1]"
+   ]
+  }
+ },
+ "reading": {
+  "experts": "routed gate/up (IQ3_S through MMB_GLU) + down: ~2.1 s of 7.6, 17-21 TFLOPS - already the fused matrix-core path",
+  "hyper-connections": "the 4-stream residual (hc_dim 10240, F32) is normed, projected down to 320 and up to 10240, sigmoid-gated, mixed and re-injected in each of 96 sublayers. The combine + next norm is already one fused, bandwidth-bound kernel (hc_combine_norm, charged to SCALE [4]: 6 ms a call). The rest is not: hc_up MUL_MAT [10240] (~4.7 ms) + SIGMOID [10240] (3.6 ms) + the mix, and hc_down MUL_MAT [320] (3.7 ms) + inject MUL_MAT [4] (3.7 ms, a 4-row output on a 128-row tile), ~1.5 s of the 7.6. The fused kernels for exactly these (hc_gate_mix: GEMM + sigmoid + mix; MMB_TALL: down and inject in one pass over the activations) exist in the base but require IQ4_NL weights; this file has Q8_0 HC weights, so LLAMA_HC_GATEMIX, LLAMA_HC_PACK_DI and LLAMA_MMB_TALL, all set by the manager, never fire (no HC_GATEMIX or MMB_TALL line in any log). Likewise the PLE conv fusion matches only an F16 conv weight and this file has F32, so LLAMA_PLE_CONV is inert too. Plausibly part of why the all-IQ4_NL file prefilled at 1020 t/s against 903 (dead-ends.md), which was put down to the expert type.",
+  "depth": "first to last ubatch +1.56 s: FLASH_ATTN_EXT (QSA3) 375 -> 589 ms, TOP_K 0 -> 247 ms, K/V packing 57 ms, and a general ~5% (clock) - sparse attention keeps depth cheap",
+  "gdn": "GATED_DELTA_NET 470-566 ms + its gated norm ~360 ms + SSM_CONV 122 ms: ~12%"
+ },
+ "ab": {
+  "ubatch 16384": "batch = ubatch 16384, same prompt, one run each: 853.8 -> 876.6 t/s (+2.7%); loads at ctx 262144. Smaller than the +6% gfx1151-engine reports for 8K -> 16K.",
+  "ROCBLAS_USE_HIPBLASLT=1": "853.8 -> 856.4 t/s (+0.3%, noise): the GEMMs that carry the time run on MMB, not rocBLAS (pwilkin measured +3.1% where his bf16 GEMMs did run on rocBLAS)"
+ }
+}

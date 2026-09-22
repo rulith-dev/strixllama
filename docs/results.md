@@ -107,6 +107,18 @@ The unified-memory switch was the largest prefill win of its day and is not a co
 on, allocations spill into shared GPU memory while the carve still has room, and shared memory is
 the same system RAM the PLE page cache needs.
 
+**Where prefill time goes (2026-09-23).** A 95.6K-token real-text prefill spends 90% in the target's
+GPU work, 4.7% in `set_inputs` with the GPU idle (most likely the PLE row gather: the prefetch only
+sees the batch it is in, and batch = ubatch), 3.9% in the MTP draft's own prefill and 0.7% building graphs. Per
+8192-token ubatch the GPU time is ~7.6 s near the start and ~9.2 s at 73K: sparse attention keeps
+depth cheap. Of the 7.6 s, the routed experts are ~2.1 s and already on the fused matrix-core path;
+the hyper-connections are ~2.1 s, of which ~1.5 s is not fused *for this file*: the base has
+fused kernels for the HC gate (GEMM + sigmoid + mix) and for down + inject in one pass, but they
+require IQ4_NL weights and Unsloth's HC weights are Q8_0, so `LLAMA_HC_GATEMIX`, `LLAMA_HC_PACK_DI`
+and `LLAMA_MMB_TALL` never fire; the PLE conv fusion likewise wants an F16 weight and gets F32. GDN is
+~12%. Two cheap A/Bs: ubatch 16384 +2.7% (853.8 → 876.6 t/s), `ROCBLAS_USE_HIPBLASLT=1` +0.3%
+(noise). Details: `docs/results/prefill-profile-20260923.json`.
+
 ## Correctness
 
 Two bugs that produced wrong output rather than slow output, both found late because the standard

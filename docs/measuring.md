@@ -97,6 +97,10 @@ Stop treating dispatch count as a cost once graphs are replaying; measure it.
 - **Not checking which binary actually ran.** A script that rewrote a temp file never substituted the
   runtime path, so three "new build" runs were the old binary compared against itself. Print the
   resolved runtime on every run.
+- **Not checking which model actually ran.** `decode_lab.py` without `--model` takes the catalog's
+  first model, which is whichever sorts first on the machine: with Qwen3.6-35B-A3B on disk, a
+  "Flash-Next prefill profile" was of that model, dense attention and all. Pass `--model` and read
+  the `model:` line it now prints.
 - **`llama-bench` has no `--load-mode none`**, so at this carve it maps 93.7 GB through a 31.6 GB
   page cache and thrashes the page file. Measure through the server. Its `tg128` also says nothing
   about real chat throughput on this model: ~25 against 64.8 measured on a coding turn.

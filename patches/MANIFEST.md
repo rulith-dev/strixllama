@@ -306,7 +306,7 @@ as a macro, so the miss-line variable is `closest`.
 
 ## Addendum 2026-09-23: `apply_disk_tier_v2`
 
-Three files already in the delta (still 30 files, replay 30 / 30), 18 hunks, after
+Three files already in the delta (still 30 files, replay 30 / 30), 62 hunks, after
 `apply_spc_direct_io` because it rewrites the disk tier that and the two patches before it built:
 
 | file | what |
@@ -329,4 +329,4 @@ main loop after each job; see `review_20260923` in the results file.
 
 `tools/make_patch_script.py` changed with it: when fine hunks do not replay, nearby hunks are merged
 with a doubling gap before falling back to one hunk for the whole span. This patch was 12247 lines as
-one hunk and is 2243 as 18.
+one hunk and 2243 as 18; with the review fixes it is 2652 lines as 62.
