@@ -91,6 +91,10 @@ PROMPT_CACHE_DISK_MIB = 16384
 # was the ~8 GB that came back when the model was unloaded. 1 GiB keeps short conversations resident;
 # anything larger goes to the disk tier alone (prompt_save falls back to it when the RAM tier declines)
 PROMPT_CACHE_RAM_MIB = 1024
+# the disk tier writes a conversation again once it has grown by this many tokens since it was last written,
+# in the background and only what changed (a few hundred MB for a 79K-token conversation, against 5.7 GB for
+# the whole state): a restart loses at most this much, and a slot can be freed later without writing anything
+PROMPT_CACHE_BLOCK_TOKENS = 4096
 HIDDEN = 0x08000000 if os.name == 'nt' else 0
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -680,6 +684,7 @@ def runtime_environment(cfg, unified=False):
     if cfg.get('prompt_cache_disk', False):
         env['STRIX_PROMPT_CACHE_DIR'] = str(DATA / 'prompt-cache')
         env['STRIX_PROMPT_CACHE_MIB'] = str(cfg.get('prompt_cache_disk_mib') or PROMPT_CACHE_DISK_MIB)
+        env['STRIX_PROMPT_CACHE_BLOCK'] = str(PROMPT_CACHE_BLOCK_TOKENS)
     if not bundled_rocm():
         env['PATH'] = str(ROCM_BIN) + os.pathsep + os.environ.get('PATH', '')
     return env
@@ -697,7 +702,12 @@ def argv(model, cfg):
     think = cfg['thinking'] if not isinstance(cfg['thinking'], bool) else ('high' if cfg['thinking'] else 'off')
     kwargs = ({'enable_thinking': False} if think == 'off'
               else {'enable_thinking': True, 'reasoning_effort': THINKING[think]})
-    args += ['--cache-prompt', '--cache-ram', str(PROMPT_CACHE_RAM_MIB), '--chat-template-kwargs', json.dumps(kwargs, separators=(',',':'))]
+    # --no-cache-idle-slots: upstream saves AND clears every idle slot on each new task when the KV is unified
+    # (-kvu, i.e. more than one slot), so talking to A, then B, then A read A back from disk and wrote B out,
+    # ~6 s a switch for long conversations, although the cells were already allocated. Without it they stay
+    # in their slots until the pool is actually full; the disk tier writes them in the background instead.
+    args += ['--cache-prompt', '--cache-ram', str(PROMPT_CACHE_RAM_MIB), '--no-cache-idle-slots',
+             '--chat-template-kwargs', json.dumps(kwargs, separators=(',',':'))]
     if cfg.get('vision', False):
         args += ['--mmproj', str(mmproj_path(cfg, model))]
     # this runtime reads the per-layer embedding table itself with offset I/O, so it must not be

@@ -41,5 +41,6 @@
   }
  },
  "not_a_defect": "the directory looked like it held 13 entries / 18.9 GiB while the server indexed 8 / 15.2 GiB. The five extra files are in the Claude sandbox overlay (AppData/Local/Packages/Claude_*/LocalCache/...), written when the app was launched from inside the sandbox on 2026-09-21; a shell inside the sandbox sees a merged view, and llama-server outside it sees only the real directory. The index is correct. Those 3.7 GiB are stranded and can be deleted by hand.",
- "ceiling": "the 16 GiB limit is now the profile field prompt_cache_disk_mib (1024-262144 MiB), since a single 79K-token conversation is 5.6 GiB and three of them filled it"
+ "ceiling": "the 16 GiB limit is now the profile field prompt_cache_disk_mib (1024-262144 MiB), since a single 79K-token conversation is 5.6 GiB and three of them filled it",
+ "correction_20260923": "The end-to-end hit figures above (8.1 s for 79441 tokens, 5.9 s for 36311) replayed the cached prompt unchanged, which leaves n_past on the last token and forces a rewind through a context checkpoint - the 2551-3642 replayed tokens. Continuing a conversation appends a message and rewinds nothing: a cold slot restoring 79441 tokens from disk and processing a 17-token turn took 4.2 s, of which 2.6 s was the read (tmp/cache_continue_probe.py). The replay is the cost of resending a prompt the cache already ends on, as a regenerate does, not of a hit."
 }

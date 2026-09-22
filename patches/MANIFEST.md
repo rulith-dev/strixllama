@@ -303,3 +303,23 @@ file written in one pass reads no faster — the cost was the page cache taking 
 data that is read once and handed to the GPU. Now 1656 ms at 3482 MB/s, and a full cache hit on the
 79K-token conversation takes 8.1 s instead of 18.1 (96.6 s cold). Note that `windows.h` defines `near`
 as a macro, so the miss-line variable is `closest`.
+
+## Addendum 2026-09-23: `apply_disk_tier_v2`
+
+Three files already in the delta (still 30 files, replay 30 / 30), 18 hunks, after
+`apply_spc_direct_io` because it rewrites the disk tier that and the two patches before it built:
+
+| file | what |
+|---|---|
+| `tools/server/server-task.h` | the store's index (entries, refcounted chunks and checkpoints), the writer's queue and thread, checkpoint paging |
+| `tools/server/server-task.cpp` | manifest + `ckpt/` + `chunks/` layout; content-defined chunking (gear hash, XXH3-128 names); one background writer that is the only thing that deletes; streaming conversion of version 1 entries; a startup scan that sweeps `.part` files and unreferenced objects; direct-I/O writes as well as reads |
+| `tools/server/server-context.cpp` | `prompt_save` hands the state to the writer (and can skip the RAM tier); block writes when all slots are idle; checkpoints paged out when idle and back in for a rewind; `make_room` before a completion; `try_clear_idle_slots` takes the least recently used slot and writes it first |
+
+Why: switching between two long conversations cost ~5-6 s because every idle slot was saved and cleared
+on each new task, and each save wrote the whole state - 5.7 GB for a 79K-token conversation - at once.
+Measured in `docs/results/disk-tier-v2-20260923.json`: switches 0.3-0.4 s, a block write 0.52 GiB,
+checkpoint paging 5.86 -> 2.78 GB of working set, restores token-identical after a kill.
+
+`tools/make_patch_script.py` changed with it: when fine hunks do not replay, nearby hunks are merged
+with a doubling gap before falling back to one hunk for the whole span. This patch was 12247 lines as
+one hunk and is 2243 as 18.

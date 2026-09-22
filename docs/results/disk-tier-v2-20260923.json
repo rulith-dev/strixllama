@@ -1,0 +1,33 @@
+{
+ "question": "switching between conversations was slow and each save wrote the whole state at once - can the KV cache, which grows incrementally, go to the SSD incrementally too?",
+ "probes": "tmp/cache_switch_probe.py (two slots, A 79K and B 36K tokens alternating; STRIX_PROBE_CTX shrinks the pool), tmp/cache_block_probe.py (grow A past a block, kill, restore, compare tokens), tmp/cache_crash_probe.py (kill while a .part exists, three times), tmp/cache_paging_probe.py (checkpoint bytes out when idle, back for a rewind; STRIX_NO_PAGING=1 is the reference), tmp/spc_dedup_probe.py and tmp/spc_shift_probe.py (what two saves of one conversation share). All run against a shadow directory of hardlinks to the real cache, so nothing they write or delete touches it.",
+ "why_switching_was_slow": {
+  "cause": "with more than one slot the manager passes -kvu, and --cache-idle-slots (on by default) then saves AND clears every idle slot on each new task. Talking to A, then B, then A read A back from disk and wrote B out, on the main loop, although the cells were allocated at load and nothing needed them.",
+  "measured_before": "switches 3.9 / 5.9 / 5.1 / 5.7 / 4.8 s: each a read (2.6 s for 79K) plus a write of the conversation left behind (3.4 s for 5.7 GB). Gathering a state out of the KV cache is 0.07-0.15 s for 1.1-2.3 GiB; the rest was disk.",
+  "measured_after": "with --no-cache-idle-slots: 4.0 s (A cold) / 1.5 s (B cold) / 0.4 / 0.3 / 0.4 s"
+ },
+ "what_two_saves_share": {
+  "checkpoints": "94% of the bytes: 29 of 31 checkpoints identical between saves 13 tokens apart. They never change once made.",
+  "state": "content-defined chunks at 64-byte-aligned cuts found nothing shared - but 23 of 24 sampled 4 KiB windows of the old target state were in the new one at an offset growing 13312 bytes per layer section (13 cells x 1024 bytes of K or V rows), plus 312 of cell metadata; the 24th was in the recurrent part, which changes on every save. The KV grows by rows appended to every layer, so the old bytes survive whole, only moved; byte-granular chunking finds them."
+ },
+ "design": {
+  "warm slots": "conversations stay in their slots until the unified pool is actually full; then the least recently used idle slot is written (if the store lacks it) and cleared. A completion makes room before anything is restored into the pool, or a restore would fail for want of cells and the whole prompt would be processed instead.",
+  "block writes": "when every slot is idle, a conversation that has grown by STRIX_PROMPT_CACHE_BLOCK tokens (4096) since it was last written is gathered (main loop) and handed to a background writer.",
+  "store": "manifest per entry + ckpt/<key>.ckp (keyed by the token prefix a checkpoint covers) + chunks/xx/<xxh3-128>.chk (gear-hash content-defined chunks, 512 KiB - 8 MiB, ~2.5 MiB average). Objects are refcounted by manifests; only the writer thread deletes. Files appear as .part and are renamed when complete, the manifest last.",
+  "checkpoint paging": "an idle slot drops the bytes of checkpoints the store holds and keeps a table from checkpoint to key; a rewind reads the one it picks back. The key is recomputed from the slot's tokens before any read, so a table that outlived a change of conversation cannot restore someone else's state.",
+  "version 1": "still read; converted in the background by streaming (tens of MB of memory), a just-loaded entry first so its conversation's next block write finds its checkpoints in the store."
+ },
+ "measured": {
+  "block write": "A (79K) grown by 600 tokens: main loop 0.55 s (buffers 364, gather 147, hand-off 43 ms), background 1.75 s of which cutting 1.35 s; 0.52 GiB written against 5.7 GiB for the whole state - 110 of 991 chunks and 2 of 30 checkpoints new. The fixed part (~95 chunks) is the recurrent state plus a chunk or two around each layer section's insertion point.",
+  "restart": "after TerminateProcess, A restored from its version 2 entry (80049 tokens, 5.65 GiB in 2.6 s), processed 14 tokens, and produced the same tokens as the warm slot. Twice.",
+  "killed mid-write": "three kills while a .part existed (a checkpoint twice, a chunk once): each left one .part and some unreferenced chunks; the next start removed both and every entry restored.",
+  "checkpoint paging": "server working set 5.86 -> 2.78 GB when idle (3.08 GiB of checkpoints handed back). An edit 2000 tokens back read checkpoint 76544 from disk in 38-49 ms and processed 2911 tokens; 16 forced tokens identical to a run that never paged.",
+  "pool pressure": "ctx 100000 with A (79K) and B (36K): every switch wrote the other conversation (0.5 GiB new for A) and cleared it, then restored; 13-14 tokens processed each time, never the whole prompt. A restore of an entry still being written waited for it (0.4-1.8 s).",
+  "conversion": "the shadow cache went 15.8 -> 12.8 GiB once converted: entries of branched conversations share chunks (31052 tokens: 2.41 GiB file -> 0.36 GiB of new objects)."
+ },
+ "not_fixed": {
+  "prefix-sharing conversations": "with slots kept, a conversation sharing a long prefix with a warm one is served by that slot (LCP selection, f_keep >= 0.5) and processes the difference, even when the store holds it exactly: 3643 tokens instead of 1 for the 31052/33744 pair. Upstream slot selection; not changed.",
+  "chunked reads": "a version 2 entry is ~1000 chunk files read one after another: 1.9-3.8 GB/s against 3.4 for one file. Parallel reads would recover it.",
+  "first save after conversion lag": "a conversation restored from a version 1 entry and saved before that entry is converted copies all its checkpoints once (seen under pool pressure)."
+ }
+}

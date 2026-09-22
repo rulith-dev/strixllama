@@ -452,6 +452,13 @@ class ManagerTests(unittest.TestCase):
         off=m.runtime_environment(m.validate_profile({'mtp':False,'prompt_cache_disk':False},self.model))
         self.assertNotIn('STRIX_PROMPT_CACHE_DIR',off)
         with self.assertRaises(ValueError):m.validate_profile({'prompt_cache_disk':'yes'},self.model)
+    def test_idle_slots_stay_warm_and_the_disk_tier_writes_in_blocks(self):
+        cfg=m.validate_profile({'parallel':4,'vision':False},self.model)
+        self.assertIn('--no-cache-idle-slots',m.argv(self.model,cfg))
+        env=m.runtime_environment(cfg)
+        self.assertEqual(env['STRIX_PROMPT_CACHE_BLOCK'],str(m.PROMPT_CACHE_BLOCK_TOKENS))
+        self.assertNotIn('STRIX_PROMPT_CACHE_BLOCK',m.runtime_environment(m.validate_profile({'prompt_cache_disk':False},self.model)))
+
     def test_the_disk_prompt_cache_ceiling_is_a_profile_field(self):
         env=m.runtime_environment(m.validate_profile({'prompt_cache_disk_mib':204800},self.model))
         self.assertEqual(env['STRIX_PROMPT_CACHE_MIB'],'204800')

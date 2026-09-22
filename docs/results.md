@@ -183,9 +183,24 @@ gate could not see them:
   reads no faster, so neither fragmentation nor the drive explains it. It was the cached I/O path:
   every GiB is copied into the page cache on the way past, which buys nothing for data that is read
   once and handed to the GPU, and costs dearly when the carve leaves 31.6 GB of system memory. Reading
-  through one aligned staging buffer gives **1656 ms at 3482 MB/s** and the hit drops to **8.1 s**
-  against 96.6 s cold. The replay is now the larger half and is inherent: sampling needs logits for the
-  last token, and a GDN recurrent state cannot be rewound by one token, so the server restores the
-  nearest context checkpoint and replays from there. Those checkpoints are also ~3.3 GB of the 4.15 GB
+  through one aligned staging buffer gives **1656 ms at 3482 MB/s**. Those end-to-end figures replayed
+  the cached prompt unchanged; continuing a conversation - a new message appended - restores 79K tokens
+  and processes only the message: **4.2 s** against 96.6 s cold. Resending a prompt the cache already
+  ends on (a regenerate) costs a replay on top: sampling needs logits for the last token, and a GDN
+  recurrent state cannot be rewound by one token, so the server restores the nearest context
+  checkpoint and replays from there (2500-3600 tokens here). Those checkpoints are also ~3.3 GB of the 4.15 GB
   the server holds with one long conversation resident. Details:
   `docs/results/prompt-cache-20260922.json`.
+- **Conversations stay put, and go to disk in blocks.** With more than one slot, upstream's
+  `--cache-idle-slots` saved and cleared every idle slot on each new task, so switching between two
+  long conversations read one back (2.6 s) and wrote the other out (3.4 s) on the main loop - ~5-6 s a
+  switch although the KV cells were already allocated. With `--no-cache-idle-slots` switches take
+  **0.3-0.4 s**, and conversations reach disk instead in blocks: once one has grown by 4096 tokens and
+  the server is idle, the state is gathered (~0.1 s) and a background thread writes only what changed.
+  Checkpoints never change once made, and the KV grows by rows appended to every layer, so
+  content-defined chunks of the serialised state find the old bytes wherever they moved: a 79K-token
+  conversation grown by 600 tokens wrote **0.52 GiB instead of 5.7**, and restoring it after a kill gave
+  the same tokens as the warm slot. Idle slots hand their checkpoints' bytes back to the store and a
+  rewind reads one back in ~40 ms (working set 5.86 -> 2.78 GB; token-identical to not paging). A
+  completion makes room in the pool first, so kept conversations never make a restore fail. Details:
+  `docs/results/disk-tier-v2-20260923.json`.
