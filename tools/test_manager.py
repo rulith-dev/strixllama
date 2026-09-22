@@ -452,6 +452,16 @@ class ManagerTests(unittest.TestCase):
         off=m.runtime_environment(m.validate_profile({'mtp':False,'prompt_cache_disk':False},self.model))
         self.assertNotIn('STRIX_PROMPT_CACHE_DIR',off)
         with self.assertRaises(ValueError):m.validate_profile({'prompt_cache_disk':'yes'},self.model)
+    def test_the_disk_prompt_cache_ceiling_is_a_profile_field(self):
+        env=m.runtime_environment(m.validate_profile({'prompt_cache_disk_mib':204800},self.model))
+        self.assertEqual(env['STRIX_PROMPT_CACHE_MIB'],'204800')
+        # a profile saved before the field existed keeps the old ceiling
+        env=m.runtime_environment(m.validate_profile({},self.model))
+        self.assertEqual(env['STRIX_PROMPT_CACHE_MIB'],str(m.PROMPT_CACHE_DISK_MIB))
+        with self.assertRaises(m.ManagerError) as caught:
+            m.validate_profile({'prompt_cache_disk_mib':512},self.model)
+        self.assertEqual(caught.exception.code,'out_of_range')
+
     def test_more_than_one_slot_keeps_the_full_context_and_the_ubatch(self):
         # since the mixed-sequence graphs took the sparse path there is no dense mask to size: four
         # slots at 262144 x 8192 load and cost ~1.3 GB over one (docs/results/concurrency-mtp-20260921.json)

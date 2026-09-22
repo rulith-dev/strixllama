@@ -177,6 +177,7 @@ export default function StrixLlamaPage({ view }: { view: View }) {
           </div>
           <label className="mt-5 flex items-center justify-between gap-4 text-sm"><span className="font-medium">{tr('config.context.promptCacheDisk')}</span><Switch id="prompt-cache-disk" checked={!!profile.prompt_cache_disk} onCheckedChange={v => field('prompt_cache_disk', v)} /></label>
           <p className="mt-2 text-xs text-muted-foreground">{tr('config.context.promptCacheDiskHelp')}</p>
+          {profile.prompt_cache_disk && <div className="mt-4">{numeric(tr('config.context.promptCacheDiskMib'), 'prompt_cache_disk_mib', tr('config.context.promptCacheDiskMibHelp'), 1024, 262144, 1024)}</div>}
         </section>
         <section className="rounded-xl border p-5">
           <h2 className="mb-5 font-medium">{tr('config.speculative.title')}</h2>

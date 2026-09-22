@@ -82,8 +82,15 @@ MMPROJ_NAME = 'mmproj-F16.gguf'
 # separately (enable_thinking=false). The template raises on anything outside low/medium/xhigh.
 THINKING = {'off': None, 'low': 'low', 'medium': 'medium', 'high': 'xhigh'}
 PORT = 8080
-# the disk tier of the server's prompt cache: at most this much under config/jan/prompt-cache
+# the disk tier of the server's prompt cache: the default ceiling for config/jan/prompt-cache, and
+# what a profile that predates the setting gets. A long conversation of this model is several GiB
+# (79K tokens = 5.6 GiB, most of it context checkpoints), so this holds about three of them.
 PROMPT_CACHE_DISK_MIB = 16384
+# the RAM tier above it (--cache-ram). llama-server's default is 8192 MiB, which on this machine is a
+# quarter of the system memory the GPU carve leaves - the KV cache itself lives in the carve, and this
+# was the ~8 GB that came back when the model was unloaded. 1 GiB keeps short conversations resident;
+# anything larger goes to the disk tier alone (prompt_save falls back to it when the RAM tier declines)
+PROMPT_CACHE_RAM_MIB = 1024
 HIDDEN = 0x08000000 if os.name == 'nt' else 0
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -198,7 +205,11 @@ DEFAULTS = dict(context=262144, gpu_layers=999, threads=16, batch=8192, ubatch=8
                 # checkpoints included - is written when its slot is reused and read back when the
                 # conversation returns, so it skips the prefill: a 34K-token session reads back in well
                 # under a second against ~40 s of prefill. Survives restarts.
-                prompt_cache_disk=True)
+                prompt_cache_disk=True,
+                # prompt_cache_disk_mib: the ceiling for that directory. Oldest goes first once it is
+                # reached, so the only cost of a larger number is disk; 200 GiB of a 1 TB drive keeps
+                # every conversation this machine can hold.
+                prompt_cache_disk_mib=PROMPT_CACHE_DISK_MIB)
 
 
 def read_json(path, default):
@@ -515,7 +526,8 @@ def profile(model):
 def validate_profile(raw, model):
     if not isinstance(raw, dict) or set(raw) - set(DEFAULTS): fail('unknown_field')
     cfg = {**profile(model), **raw}
-    bounds = dict(context=(512,262144), gpu_layers=(0,999), threads=(1,32), batch=(32,32768), ubatch=(32,32768), draft_max=(1,8), parallel=(1,8))
+    bounds = dict(context=(512,262144), gpu_layers=(0,999), threads=(1,32), batch=(32,32768), ubatch=(32,32768), draft_max=(1,8), parallel=(1,8),
+                  prompt_cache_disk_mib=(1024,262144))
     for field, (low, high) in bounds.items():
         if type(cfg[field]) is not int or not low <= cfg[field] <= high: fail('out_of_range', field=field, low=low, high=high)
     for field in ('mtp', 'ngram_spec', 'qsa', 'shared_vram', 'trunk_decode_q6k', 'vision', 'prompt_cache_disk'):
@@ -667,7 +679,7 @@ def runtime_environment(cfg, unified=False):
     # the server's prompt cache gets a disk tier (see DEFAULTS); the directory lives with the settings
     if cfg.get('prompt_cache_disk', False):
         env['STRIX_PROMPT_CACHE_DIR'] = str(DATA / 'prompt-cache')
-        env['STRIX_PROMPT_CACHE_MIB'] = str(PROMPT_CACHE_DISK_MIB)
+        env['STRIX_PROMPT_CACHE_MIB'] = str(cfg.get('prompt_cache_disk_mib') or PROMPT_CACHE_DISK_MIB)
     if not bundled_rocm():
         env['PATH'] = str(ROCM_BIN) + os.pathsep + os.environ.get('PATH', '')
     return env
@@ -685,7 +697,7 @@ def argv(model, cfg):
     think = cfg['thinking'] if not isinstance(cfg['thinking'], bool) else ('high' if cfg['thinking'] else 'off')
     kwargs = ({'enable_thinking': False} if think == 'off'
               else {'enable_thinking': True, 'reasoning_effort': THINKING[think]})
-    args += ['--cache-prompt', '--chat-template-kwargs', json.dumps(kwargs, separators=(',',':'))]
+    args += ['--cache-prompt', '--cache-ram', str(PROMPT_CACHE_RAM_MIB), '--chat-template-kwargs', json.dumps(kwargs, separators=(',',':'))]
     if cfg.get('vision', False):
         args += ['--mmproj', str(mmproj_path(cfg, model))]
     # this runtime reads the per-layer embedding table itself with offset I/O, so it must not be

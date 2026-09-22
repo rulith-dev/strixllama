@@ -160,3 +160,20 @@ gate could not see them:
   it: four slots at 262144 × 8192 load and cost 1.3 GB over one slot (4096 used to cost 9 GB and
   8192 did not load), so the default `-np 1` is only about the ~1 GB and the slower prefill of a
   shared pool. Image input needs a single slot.
+- **What the prompt cache cost in system RAM.** `--cache-ram` defaults to 8192 MiB and the manager never
+  set it, so the server held ~8 GB of system memory for cached conversation state on a machine whose GPU
+  carve leaves 31.6 GB for the whole desktop — the KV cache is in the carve, this was the RAM tier above
+  the disk one. Turning it down needed a change first: `alloc()` refuses a state larger than the limit and
+  `persist()` only ever ran on a state `alloc()` had accepted, so a small limit would have quietly stopped
+  every long conversation from reaching disk. With `persist()` taking the buffers directly and
+  `--cache-ram 1024`, the same four conversations cycled through one slot leave the server at
+  **4.13 GB resident instead of 8.07 GB**, and finish 83.4 s → 57.5 s faster because the disk reads
+  stop competing with the cache for memory. Two defects surfaced with it: the disk tier
+  ranked candidates by `f_keep`, so a short entry that was a complete prefix (`f_keep = 1.000`) shadowed
+  every longer entry of the same conversation — the 79K-token chat loaded the 49370-token entry and
+  prefilled 30071 tokens (46.3 s) where the right entry costs 2897 (**17.3 s, against 96.6 s cold**) — and
+  reopening any cached conversation with MTP **off** hit `GGML_ASSERT(ctx_dft)` and killed the server. An
+  entry written with MTP on is now usable without it (the draft half is dropped); the reverse is refused,
+  because nothing can prime a draft context for a sequence the target is already deep into. The disk
+  ceiling is a setting now, since one long conversation is 5.6 GB. Details:
+  `docs/results/prompt-cache-20260922.json`.

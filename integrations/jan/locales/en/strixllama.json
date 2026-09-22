@@ -92,7 +92,9 @@
       "gpuLayers": "GPU layers",
       "gpuLayersHelp": "999 offloads as many layers as fit",
       "promptCacheDisk": "Keep conversation state on disk",
-      "promptCacheDiskHelp": "When a conversation leaves the server it is written to disk (about 30 KB per token, up to 16 GB, oldest removed first) and read back when it returns, so its prompt is not processed again — a 34K-token session comes back in under a second instead of 40 seconds of prefill. Survives restarts. Applies on the next load."
+      "promptCacheDiskHelp": "When a conversation leaves the server it is written to disk (about 30 KB per token, up to the limit below, oldest removed first) and read back when it returns, so its prompt is not processed again — a 34K-token session comes back in under a second instead of 40 seconds of prefill. Survives restarts. Applies on the next load.",
+      "promptCacheDiskMib": "Disk limit for conversation state (MB)",
+      "promptCacheDiskMibHelp": "How much the folder above may hold before the oldest conversation is removed. A long conversation of this model is several GB, so 16384 keeps about three of them; raise it if the drive has room."
     },
     "speculative": {
       "title": "Speculative decoding",

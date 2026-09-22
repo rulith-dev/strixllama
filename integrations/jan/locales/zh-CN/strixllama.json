@@ -92,7 +92,9 @@
       "gpuLayers": "GPU 卸载层数",
       "gpuLayersHelp": "999 表示尽可能多地卸载",
       "promptCacheDisk": "对话状态存盘",
-      "promptCacheDiskHelp": "对话离开服务端时把它的状态写到磁盘（每 token 约 30 KB，最多 16 GB，先删最旧的），回来时读回，不再重新处理提示词——34K token 的会话读回不到 1 秒，重新预填充要 40 秒。重启后仍然有效。下次加载生效。"
+      "promptCacheDiskHelp": "对话离开服务端时把它的状态写到磁盘（每 token 约 30 KB，最多占用下面设定的上限，先删最旧的），回来时读回，不再重新处理提示词——34K token 的会话读回不到 1 秒，重新预填充要 40 秒。重启后仍然有效。下次加载生效。",
+      "promptCacheDiskMib": "对话状态磁盘上限（MB）",
+      "promptCacheDiskMibHelp": "上面那个目录最多占多少，超过就先删最旧的对话。这个模型的长对话每个几 GB，16384 大约能存三个；磁盘有空间就调大。"
     },
     "speculative": {
       "title": "推测解码",

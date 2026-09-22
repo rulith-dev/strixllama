@@ -270,3 +270,21 @@ and the GDN beta/alpha `[2560 × 48]` at 37 µs per call through cuBLAS — 95 +
 because `mul_mat_f` declines a src0 narrower than its row tile and the vector kernel stops at 8
 columns. With chunks: 13 and 10 µs; the bare 16-token pass 139.8 → 130.4 ms. Measured in
 `docs/results/concurrency-mtp-20260921.json` (`pass_budget_20260921`).
+
+## Addendum 2026-09-22: `apply_cache_ram_and_mtp`
+
+Three files already in the delta (still 30 files, replay 30 / 30), 17 hunks, after
+`apply_prompt_cache_disk` because it rewrites the tier that one adds:
+
+| file | what |
+|---|---|
+| `tools/server/server-task.h` | `persist()` overload taking the buffers, `has_disk()`, `disk_wants()` |
+| `tools/server/server-task.cpp` | persist from buffers the RAM tier does not own; a media guard that can fire; rank disk candidates by the tokens they skip; say why a scan drops a file and remove one that can never be read; print what was on the shelf when nothing is taken; keep the target state when the entry has a draft one and this server does not draft, and refuse the reverse |
+| `tools/server/server-context.cpp` | `prompt_save()` gathers into a temporary and writes to disk when the RAM tier declines the state |
+
+Why: `--cache-ram` defaults to 8192 MiB, which was ~8 GB of system memory on a machine whose carve
+leaves 31.6 GB, and it could not simply be turned down — `alloc()` refuses an over-limit state and
+`persist()` only ran on states `alloc()` accepted, so a small limit would have stopped long
+conversations reaching disk at all. Measured in `docs/results/prompt-cache-20260922.json`: resident
+8.07 GB → 4.13 GB over the same four conversations, the 79K-token one 96.6 s of prefill → 17.3 s,
+and MTP off no longer aborts the server on a cached conversation.
