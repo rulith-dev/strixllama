@@ -177,3 +177,15 @@ gate could not see them:
   because nothing can prime a draft context for a sequence the target is already deep into. The disk
   ceiling is a setting now, since one long conversation is 5.6 GB. Details:
   `docs/results/prompt-cache-20260922.json`.
+- **Why a cache hit still cost 17 s.** Of a hit on the 79K-token conversation, 12.1 s was reading the
+  5.630 GiB entry and 5.5 s was replaying 2897 tokens. The read ran at 505 MB/s; the same file read
+  with `FILE_FLAG_NO_BUFFERING` comes off the drive at **3451 MB/s**, and a copy written in one pass
+  reads no faster, so neither fragmentation nor the drive explains it. It was the cached I/O path:
+  every GiB is copied into the page cache on the way past, which buys nothing for data that is read
+  once and handed to the GPU, and costs dearly when the carve leaves 31.6 GB of system memory. Reading
+  through one aligned staging buffer gives **1656 ms at 3482 MB/s** and the hit drops to **8.1 s**
+  against 96.6 s cold. The replay is now the larger half and is inherent: sampling needs logits for the
+  last token, and a GDN recurrent state cannot be rewound by one token, so the server restores the
+  nearest context checkpoint and replays from there. Those checkpoints are also ~3.3 GB of the 4.15 GB
+  the server holds with one long conversation resident. Details:
+  `docs/results/prompt-cache-20260922.json`.

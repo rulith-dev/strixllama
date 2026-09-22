@@ -20,8 +20,25 @@
   "verified": "STRIX_NO_MTP=1 replays both conversations against entries written with MTP on: both hit at f_keep = f_sim = 1.000, the server survives, and the log says it kept the target state"
  },
  "read_speed": {
-  "measured": "the server reads a 1.895 GiB entry in 3.8-4.2 s and a 5.630 GiB entry in 12.1 s. A plain sequential read of the same file on the same drive is 1.0-1.4 s for 1.9 GiB (1411-1864 MB/s, Crucial P310 NVMe).",
-  "reading": "the gap is the buffers, not the drive: every blob is a fresh std::vector that is zero-filled and then overwritten, and the first touch faults in multiple GB of new commit. Lower memory pressure from --cache-ram 1024 helps; a no-init buffer or a chunked restore would be the next step, worth roughly 3 s on a 1.9 GiB entry and 7 on a 5.6 GiB one."
+  "question": "a full cache hit on the 79K-token conversation still took 17.3 s. Where did it go?",
+  "breakdown": "12.1 s reading the 5.630 GiB entry, 5.5 s replaying 2897 tokens, ~0.7 s of slot work",
+  "the read": {
+   "measured": "the server read at 505 MB/s. Splitting the timer: file 11427 ms, buffers (vector resize and first touch of 5.6 GB) 932 ms - so it was the I/O, not the allocation. Giving the stream no buffer, or a 16 MiB one, changed nothing (481-520 MB/s either way).",
+   "what the drive does": "the same file read with FILE_FLAG_NO_BUFFERING: 5.630 GiB in 1671 ms = 3451 MB/s. A copy of it written in one pass reads at 3612 MB/s, so the entry being written as 92 appended blobs had not fragmented it. A buffered read reports 1400-3000 MB/s, which is the page cache answering, not the drive.",
+   "cause": "the cached I/O path. Every GiB is DMA-d into the page cache and then copied into the caller buffer, and the cache manager has to find those pages on a machine where the GPU carve leaves 31.6 GB of system memory. The entry is read once and handed to the GPU, so that copy buys nothing and evicts whatever the desktop was using.",
+   "fix": "apply_spc_direct_io: CreateFileW with FILE_FLAG_NO_BUFFERING | FILE_FLAG_SEQUENTIAL_SCAN and one aligned 8 MiB staging buffer, since the blobs are not sector-sized. A volume that refuses unbuffered I/O falls back to a buffered handle. windows.h still defines `near` as a macro, which is why the miss-line variable is called `closest`.",
+   "after": "5.630 GiB in 1656 ms at 3482 MB/s (2.570 s including buffers); 1.895 GiB in 564 ms at 3441; 2.703 GiB in 817 ms at 3388"
+  },
+  "the replay": {
+   "why a full hit reprocesses anything": "sampling needs logits for the last token, so [TAG_PROMPT_LOGITS] drops n_past by one. This model has GDN recurrent layers and a recurrent state cannot be rewound by a token, so the server restores the nearest context checkpoint and replays from there. 30 checkpoints over 79441 tokens is ~2650 apart, which is the 2897 tokens seen.",
+   "cost": "2551-3642 tokens at 546-692 t/s = 4.6-5.5 s, and it is now the larger half of a cache hit",
+   "the dial": "--ctx-checkpoints (default 32) sets both the replay gap and the memory: the checkpoints are ~110 MB each, so they are ~3.3 GB of the 4.15 GB the server holds with one long conversation resident, and ~3.3 GiB of the 5.63 GiB entry. Halving them halves that memory and roughly doubles the replay. Left at 32: now that reads run at 3.4 GB/s the balance is reasonable, and the memory is the reason not to raise it."
+  },
+  "end_to_end": {
+   "79441 tokens": "cold prefill 96.6 s | wrong entry taken 46.3 s | selection fixed 17.3-18.1 s | direct I/O 8.1 s",
+   "36311 tokens": "cold 43.8 s | 9.0 s | 5.9 s",
+   "33744 tokens": "11.1 s | 6.3 s"
+  }
  },
  "not_a_defect": "the directory looked like it held 13 entries / 18.9 GiB while the server indexed 8 / 15.2 GiB. The five extra files are in the Claude sandbox overlay (AppData/Local/Packages/Claude_*/LocalCache/...), written when the app was launched from inside the sandbox on 2026-09-21; a shell inside the sandbox sees a merged view, and llama-server outside it sees only the real directory. The index is correct. Those 3.7 GiB are stranded and can be deleted by hand.",
  "ceiling": "the 16 GiB limit is now the profile field prompt_cache_disk_mib (1024-262144 MiB), since a single 79K-token conversation is 5.6 GiB and three of them filled it"

@@ -34,7 +34,7 @@
   "src/models/qwen4exp.cpp": "96da4dc392117286c4399b3712c1278072cca44f347ca1c52825f8a3c221caa1",
   "tests/test-backend-ops.cpp": "6c2a5e5e3ac7d840c6610ea7b70dca89de5d81e48ebcc56f239a6fe429e90e96",
   "tools/server/server-context.cpp": "c014aee7a8ac9d2a3f3b770ae0816f2b01ba093343970f81c9a415c17a68b45f",
-  "tools/server/server-task.cpp": "800c3d148d44aca8e7616eda82e44a3a408c2f96315a0d28e446a9c13e2a80d0",
+  "tools/server/server-task.cpp": "d5021261d269d9b7dbfbd91347f3ce513537edb2576a9146c19d2c76eef7151b",
   "tools/server/server-task.h": "9f472368e3539acd914d82344e43deccf150ef246edbb53321a5b1f40235de4f"
  },
  "repo": "https://github.com/pwilkin/llama.cpp",

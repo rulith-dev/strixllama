@@ -288,3 +288,18 @@ leaves 31.6 GB, and it could not simply be turned down — `alloc()` refuses an 
 conversations reaching disk at all. Measured in `docs/results/prompt-cache-20260922.json`: resident
 8.07 GB → 4.13 GB over the same four conversations, the 79K-token one 96.6 s of prefill → 17.3 s,
 and MTP off no longer aborts the server on a cached conversation.
+
+## Addendum 2026-09-22: `apply_spc_direct_io`
+
+One file already in the delta (still 30 files, replay 30 / 30), 13 hunks, after
+`apply_cache_ram_and_mtp` because it replaces the reader that patch leaves behind:
+
+| file | what |
+|---|---|
+| `tools/server/server-task.cpp` | `spc_file`: unbuffered sequential reads through one aligned 8 MiB staging buffer on Windows, `std::ifstream` elsewhere; the read log line splits file time from buffer time; a file that cannot be opened is no longer treated as corrupt and deleted |
+
+Why: a 5.630 GiB entry read at 505 MB/s while the drive gives 3451 MB/s unbuffered, and a copy of the
+file written in one pass reads no faster — the cost was the page cache taking a copy of every GiB of
+data that is read once and handed to the GPU. Now 1656 ms at 3482 MB/s, and a full cache hit on the
+79K-token conversation takes 8.1 s instead of 18.1 (96.6 s cold). Note that `windows.h` defines `near`
+as a macro, so the miss-line variable is `closest`.
