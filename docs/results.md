@@ -107,17 +107,20 @@ The unified-memory switch was the largest prefill win of its day and is not a co
 on, allocations spill into shared GPU memory while the carve still has room, and shared memory is
 the same system RAM the PLE page cache needs.
 
-**Where prefill time goes (2026-09-23).** A 95.6K-token real-text prefill spends 90% in the target's
-GPU work, 4.7% in `set_inputs` with the GPU idle (most likely the PLE row gather: the prefetch only
-sees the batch it is in, and batch = ubatch), 3.9% in the MTP draft's own prefill and 0.7% building graphs. Per
-8192-token ubatch the GPU time is ~7.6 s near the start and ~9.2 s at 73K: sparse attention keeps
-depth cheap. Of the 7.6 s, the routed experts are ~2.1 s and already on the fused matrix-core path;
-the hyper-connections are ~2.1 s, of which ~1.5 s is not fused *for this file*: the base has
-fused kernels for the HC gate (GEMM + sigmoid + mix) and for down + inject in one pass, but they
-require IQ4_NL weights and Unsloth's HC weights are Q8_0, so `LLAMA_HC_GATEMIX`, `LLAMA_HC_PACK_DI`
-and `LLAMA_MMB_TALL` never fire; the PLE conv fusion likewise wants an F16 weight and gets F32. GDN is
-~12%. Two cheap A/Bs: ubatch 16384 +2.7% (853.8 → 876.6 t/s), `ROCBLAS_USE_HIPBLASLT=1` +0.3%
-(noise). Details: `docs/results/prefill-profile-20260923.json`.
+**Where prefill time goes (2026-09-23).** Per 8192-token ubatch the GPU time is ~7.6 s near the
+start and ~9.2 s at 73K: sparse attention keeps depth cheap. Of the 7.6 s, the routed experts are
+~2.1 s and already on the fused matrix-core path; the hyper-connections are ~2.1 s. The base has fused
+kernels for the HC gate (GEMM + sigmoid + stream mix) and the PLE conv taps, but only for IQ4_NL HC
+weights and an F16 conv weight; Unsloth's file has Q8_0 and F32, so `LLAMA_HC_GATEMIX` and
+`LLAMA_PLE_CONV` were inert. (The sigmoid + mix itself was already one kernel; what the gate fusion
+removes is the [10240, T] gate's round trip through memory.) `apply_hc_q8_fusions` gives both to these
+types with the unfused path's numerics - the same greedy tokens and top-5 logprobs - and takes the
+first ubatch 7592 → 7245 ms. GDN is ~12%. A 95.6K-token real-text prefill, production flags:
+**846 t/s on 0.1.7, 888-892 with this round** (the fusions, then the next batch's PLE rows gathered
+while the current one computes). The graph-timing instrumentation had made that gather look like idle
+GPU time; it synchronises after every graph, and without it most host work overlaps the previous
+batch. Two cheap A/Bs measured nothing worth their cost: ubatch 16384 +2.7%, `ROCBLAS_USE_HIPBLASLT=1`
++0.3%. Details: `docs/results/prefill-profile-20260923.json`, `docs/results/perf-round-20260923.json`.
 
 ## Correctness
 
@@ -198,11 +201,13 @@ gate could not see them:
   through one aligned staging buffer gives **1656 ms at 3482 MB/s**. Those end-to-end figures replayed
   the cached prompt unchanged; continuing a conversation - a new message appended - restores 79K tokens
   and processes only the message: **4.2 s** against 96.6 s cold. Resending a prompt the cache already
-  ends on (a regenerate) costs a replay on top: sampling needs logits for the last token, and a GDN
-  recurrent state cannot be rewound by one token, so the server restores the nearest context
-  checkpoint and replays from there (2500-3600 tokens here). Those checkpoints are also ~3.3 GB of the 4.15 GB
-  the server holds with one long conversation resident. Details:
-  `docs/results/prompt-cache-20260922.json`.
+  ends on costs a replay on top: sampling needs logits for the last token, and a GDN recurrent state
+  cannot be rewound by one token, so the server restores the nearest context checkpoint and replays
+  from there - 2500-3600 tokens when the resent prompt includes the last answer, as that probe's did,
+  but **4 tokens for a regenerate from the app**, which resends the messages without the answer
+  (upstream keeps a checkpoint 4 tokens before every prompt's end; `tmp/regen_probe.py`). Those
+  checkpoints are also ~3.3 GB of the 4.15 GB the server holds with one long conversation resident.
+  Details: `docs/results/prompt-cache-20260922.json`, `regenerate` in `perf-round-20260923.json`.
 - **Conversations stay put, and go to disk in blocks.** With more than one slot, upstream's
   `--cache-idle-slots` saved and cleared every idle slot on each new task, so switching between two
   long conversations read one back (2.6 s) and wrote the other out (3.4 s) on the main loop - ~5-6 s a
@@ -215,4 +220,7 @@ gate could not see them:
   the same tokens as the warm slot. Idle slots hand their checkpoints' bytes back to the store and a
   rewind reads one back in ~40 ms (working set 5.86 -> 2.78 GB; token-identical to not paging). A
   completion makes room in the pool first, so kept conversations never make a restore fail. Details:
-  `docs/results/disk-tier-v2-20260923.json`.
+  `docs/results/disk-tier-v2-20260923.json`. A restore reads the chunks with four threads and leaves
+  the checkpoints in the store, pinned and paged in by a rewind like idle ones: the 79K-token
+  conversation came back as **2.33 GiB in 0.73 s instead of 5.63 GiB in 2.72 s**, its next reply
+  4.75 → 2.57 s, the server at 2.74 GB instead of 4.52 (`restore` in `perf-round-20260923.json`).

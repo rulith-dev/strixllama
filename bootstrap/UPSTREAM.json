@@ -7,6 +7,7 @@
  ],
  "produces": {
   "common/speculative.cpp": "aab538d6c13facbf32bdac85fa338b50993a65de167cfeb7b61bde78088e44b3",
+  "ggml/src/ggml-cuda/gdn-conv.cu": "eced61710a178ba5bc07985775e64711f82c9173cb57d05d3054c46ddaa759bb",
   "ggml/src/ggml-cuda/ggml-cuda.cu": "2c563fd8301d84136aafb8ffc386b5e40d7e16df84ebd5e7db60811312fdaccc",
   "ggml/src/ggml-cuda/mmb.cu": "93e62856ec776917bf3251f10a8d4bbf22d31d10d46b8afd7ca24513aec67ae0",
   "ggml/src/ggml-cuda/mmb.cuh": "1bff81ef7a2b088fa32c886462156bbcb7c33bb689a9fbf71d0a88c57314238e",
@@ -34,7 +35,7 @@
   "src/llama-model.cpp": "ee9b24fcd6227fea4e27dc5322fac0a08254d0483b1b0165767eabbabc9322dc",
   "src/llama-model.h": "934dfaf7862ed94699692cfe4d93f7a1fbd7b646d4577dbd0ba197ee2f953175",
   "src/models/block-graph.inc": "716077d2dd61f3d7edb94945eaf1cd4aa2bb86f452eff22832d9cf279d55ec07",
-  "src/models/qwen4exp.cpp": "0ce19e9d1b0adcfc10d7e7e43daf4ccd5ec7b3cdf58fef433181b151f9c5a80c",
+  "src/models/qwen4exp.cpp": "c684306f55334038a24d4251f98a6c35e1a2729180be5378d4cf8701a0312d9a",
   "tests/test-backend-ops.cpp": "6c2a5e5e3ac7d840c6610ea7b70dca89de5d81e48ebcc56f239a6fe429e90e96",
   "tools/server/server-context.cpp": "c708fabb765062d096c386ca2b0ef51b5aab90a8b07837677dfca1ead611c1ec",
   "tools/server/server-task.cpp": "98db2e176c06588665460b36713f1e8b63de98c0526e0b57412a3bdf768fab71",
@@ -46,6 +47,10 @@
   "common/speculative.cpp": {
    "git_blob": "8c3208af5fabc32ea0aae6f73cfbc96558036258",
    "sha256": "4db665a495adde2268731668cb1387e434cf7f071da84b2f67f0f9bcf87cc477"
+  },
+  "ggml/src/ggml-cuda/gdn-conv.cu": {
+   "git_blob": "fb63047d47463c377ed7123aa0b3836ba8d599ac",
+   "sha256": "1c52ba6e621dc9a7b59eaaab06f33ee984a78dbb58038768e9772b587192f335"
   },
   "ggml/src/ggml-cuda/ggml-cuda.cu": {
    "git_blob": "0dcb7dae4b07885f4672a3ef77cca010c909a329",

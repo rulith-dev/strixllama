@@ -36,5 +36,19 @@
   "depth": "the 4-token verify graph at 85K against 2K (node timing, graphs off): +10.3 ms of which ~3-4 is the extra dispatches' event overhead; the rest is the QSA gathers (KV cells 1.6 ms, block keys 1.2 ms), scoring and top-k",
   "first-call cost": "one MUL_MAT [640,16] costs 152 ms once per server (a BLAS first use) and looked like 0.85 ms a layer when averaged over 15 graphs",
   "ablation": "zero-filling GATED_DELTA_NET made the verify 16 ms slower, not faster: with garbage states the router picks more distinct experts. Op ablation does not measure cost in a MoE model."
+ },
+ "state_copy_trim": {
+  "what": "the conv-state tails are copied straight out of the concat into each rollback slot, without a cont first: 144 fewer dispatches in a 4-token verify pass (36 GDN layers x 4 slots); the GDN conv fusion accepts the copy",
+  "measured": "back to back on real text at short context, median of 68 passes: 0.1.7 pass 72.80 ms (verify 59.40), this build 72.05 ms (verify 58.90); a first run of this build read 79.05 ms and was a system hiccup - its draft steps were 22% slower too, which nothing here touches",
+  "same output": "48 greedy tokens and their top-5 logprobs identical to the previous build"
+ },
+ "tried_and_dropped": {
+  "16-row tile for the F32 inject": "the [10240 -> 4] inject on a 16-row instead of a 128-row tile: bitwise the same and no faster (356 -> 367 ms per 8192 tokens) - the 64 blocks of its grid are bound by splitting the activations, not by the 124 zero rows; reverted",
+  "Q8_0 down + inject in one GEMM": "Unsloth keeps the inject weights in F32, so the two cannot be packed; the Q8_0 pack path was not enabled, untested"
+ },
+ "release_gates": {
+  "vision": "tools/vision_stress.py: STRESS OK, nine turns and two branches to 16.4K tokens",
+  "block write and restart": "tmp/cache_block_probe.py: A grown past a block, written (0.52 GiB), killed, restored from its version 2 entry (2.349 GiB in 887 ms, 30 checkpoints left on disk), same tokens as the warm slot",
+  "pool pressure": "tmp/cache_switch_probe.py at ctx 100000: every switch saves the other conversation, frees it, restores this one (0.3-0.7 s of reads) and processes 13-14 tokens"
  }
 }

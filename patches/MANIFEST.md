@@ -347,3 +347,11 @@ Measured in `docs/results/perf-round-20260923.json`.
 Every one of them was checked for identical output: 48 greedy tokens with their top-5 logprobs for the
 fusions and the sort, the tokens of a continue / rewind / return sequence for the restore, the generated
 text of a 95.6K-token prefill for the pregather.
+
+## Addendum 2026-09-23: `apply_state_copy_trim`
+
+`ggml/src/ggml-cuda/gdn-conv.cu` joins the delta (34 files, 30 modified, 4 added); replay 34 / 34, 32
+patches. Two hunks: `build_conv_state_at` copies each rollback slot's conv-state tail straight out of
+the concat instead of through a cont (144 fewer dispatches in a 4-token verify pass), and the GDN conv
+fusion's matcher accepts that copy as a reader of the tail, so prefill keeps the fusion. Pure copies:
+the output is bitwise the same; a verify pass measured 59.40 -> 58.90 ms.
