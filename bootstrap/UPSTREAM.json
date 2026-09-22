@@ -33,9 +33,9 @@
   "src/models/block-graph.inc": "716077d2dd61f3d7edb94945eaf1cd4aa2bb86f452eff22832d9cf279d55ec07",
   "src/models/qwen4exp.cpp": "96da4dc392117286c4399b3712c1278072cca44f347ca1c52825f8a3c221caa1",
   "tests/test-backend-ops.cpp": "6c2a5e5e3ac7d840c6610ea7b70dca89de5d81e48ebcc56f239a6fe429e90e96",
-  "tools/server/server-context.cpp": "35d268a011c8229e6300d06f147724bf0e90e8c72f040e575e09763d5b616e24",
-  "tools/server/server-task.cpp": "0c45eadd8c51155d62937c3797be8abce306dc49a29b76c1c7af69c29aba6de4",
-  "tools/server/server-task.h": "af701c8dd3752d1f38a77fa39c204850ee0e96af5b4eae7c595d22b1d73960c6"
+  "tools/server/server-context.cpp": "03814dcd5eacf4d90eb098348a38ba409005d13c085d765e6d230eb0167a9490",
+  "tools/server/server-task.cpp": "a0ef216f370e6f1a95aaa37e7bfb339dbe070b919673add5278af19c79949190",
+  "tools/server/server-task.h": "8012e53cf6c6b6fc29d78d8bee175a2ac45ca90aeebce9b5a3ede0e67b4be664"
  },
  "repo": "https://github.com/pwilkin/llama.cpp",
  "revision": "f5daaa3cfa6358e5dd398911ec741813745a5440",

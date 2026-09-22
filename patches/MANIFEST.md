@@ -320,6 +320,13 @@ on each new task, and each save wrote the whole state - 5.7 GB for a 79K-token c
 Measured in `docs/results/disk-tier-v2-20260923.json`: switches 0.3-0.4 s, a block write 0.52 GiB,
 checkpoint paging 5.86 -> 2.78 GB of working set, restores token-identical after a kill.
 
+Before release it went through three independent reviews (concurrency, formats and crash safety,
+slot lifecycle) and now also carries their fixes: checkpoints a queued save or a warm slot depends on
+are pinned in the store; entries live in a directory named after the model and its file; checkpoint
+files end with an XXH3-128 and are read against the manifest's sizes; a v1 conversion places the new
+manifest before dropping the old file; startup leaves alone what it cannot open; the writer wakes the
+main loop after each job; see `review_20260923` in the results file.
+
 `tools/make_patch_script.py` changed with it: when fine hunks do not replay, nearby hunks are merged
 with a doubling gap before falling back to one hunk for the whole span. This patch was 12247 lines as
 one hunk and is 2243 as 18.

@@ -29,5 +29,25 @@
   "prefix-sharing conversations": "with slots kept, a conversation sharing a long prefix with a warm one is served by that slot (LCP selection, f_keep >= 0.5) and processes the difference, even when the store holds it exactly: 3643 tokens instead of 1 for the 31052/33744 pair. Upstream slot selection; not changed.",
   "chunked reads": "a version 2 entry is ~1000 chunk files read one after another: 1.9-3.8 GB/s against 3.4 for one file. Parallel reads would recover it.",
   "first save after conversion lag": "a conversation restored from a version 1 entry and saved before that entry is converted copies all its checkpoints once (seen under pool pressure)."
+ },
+ "review_20260923": {
+  "how": "three independent read-only reviews of the diff from 02f0ed54 - concurrency and locking; file formats, I/O and crash safety; server integration and slot lifecycle - then every finding checked against the code and the probes re-run on the fixed build",
+  "fixed": {
+   "conversation lost": "a save queued by make_room named a checkpoint of the conversation's older entry without carrying it; an eviction committed by another job deleted it; the writer then discarded the whole entry, and the slot had already been cleared. Checkpoints a job names but does not carry are pinned (a reference in the store) until its entry counts them, and the writer drops a missing one from the manifest instead of discarding the entry.",
+   "warm slot lost its checkpoints": "a slot's paged-out checkpoints could be deleted by evicting the entry they came from, so a later rewind processed the whole prompt. Paging pins them; clearing the slot or restoring another conversation into it lets go. A checkpoint that still cannot be read back is dropped and the next older one tried.",
+   "no model identity": "every model shared one directory and nothing recorded which wrote an entry; two quants of one model, or two fine-tunes of one base, have identical state shapes, so the restore took the other's state silently. Pre-existing since 0.1.4. Entries now live in <cache>/m<fnv64 of model description, parameter count, tensor bytes, file path, size and mtime>; entries from before move into the first model that starts.",
+   "crash on every start": "read_ckpt sized its buffers from the file before comparing them with the manifest, so a damaged length asked for up to a TiB and the uncaught bad_alloc ended the process - on the same prompt after every restart. Blobs are read against the manifest's sizes, loads catch bad_alloc (skip, the entry is fine) and everything else (drop it).",
+   "checkpoints unchecked": "chunks were hash-checked but checkpoints, more than half the bytes, were not: a damaged payload restored garbage or tripped the restore's size assert. Checkpoint files end with an XXH3-128 of their payloads (format version 2 - version 1 never shipped). A damaged object is retired with every entry that names it.",
+   "conversion order": "converting a version 1 entry deleted the old file before placing the new manifest; a kill in between lost the conversation. The manifest is placed and its references counted first.",
+   "startup deleted what it could not open": "a sharing violation or a manifest from a later build was deleted and its objects swept as orphans. Such files are now left alone, and nothing is swept while any is.",
+   "block writes never retried": "the main loop sleeps once every slot is idle, so a block write the busy writer turned away waited for the next request, and checkpoints that had just landed stayed in memory. The writer wakes the loop after each job (a NEXT_RESPONSE task). Measured: working set 2.5 GB right after a block write, where the earlier build showed 5.8.",
+   "smaller ones": "media prompts were gathered for the disk tier on every idle pass and refused; a busy slot named by id had its KV swapped from the cache mid-generation; room was made for the prompt and not the longer entry a restore brings in; a load waited for writes that could not help it; a conversion could not be interrupted by a save; the LRU order was lost on restart; the last write was padded to 4 KiB (now 64 KiB, every sector size in use); directory iteration at startup used the throwing overloads; the generation margin was a fixed 1024 tokens (now n_predict, or 4096)."
+  },
+  "not_changed": {
+   "child slots": "a request with n > 1 copies the parent's state into free slots and can overwrite a warm conversation that was never written. Neither the app nor the manager sends n > 1.",
+   "prefix-sharing conversations": "still served by the warm slot that shares the prefix (upstream LCP selection).",
+   "file deletion under the lock": "evicting a large entry deletes its files with the index locked; a lookup waits."
+  },
+  "verified_after": "switching (normal pool 0.3-0.4 s; pool of 100000 makes room, 13-14 tokens processed); a block write 0.521 GiB and token-identical after a kill; three kills mid-write - 52 orphans removed at the next start, 10 of 10 entries restore; paging 5.86 -> 2.78 GB, 16 tokens after an edit rewind identical to not paging."
  }
 }
