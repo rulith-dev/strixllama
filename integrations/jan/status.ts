@@ -11,7 +11,7 @@ export const request = <T,>(op: string, data: object = {}) =>
 export const PROVIDER = 'strixllama'
 export const ENDPOINT = 'http://127.0.0.1:8080/v1'
 
-export type Profile = { thinking: string; context: number; gpu_layers: number; threads: number; batch: number; ubatch: number; mtp: boolean; draft: string; draft_max: number; draft_min: number; ngram_spec: boolean; kv: string; flash_attention: string; qsa: boolean; shared_vram: boolean; trunk_decode_q6k: boolean; parallel: number; vision: boolean; mmproj: string; prompt_cache_disk: boolean }
+export type Profile = { thinking: string; context: number; gpu_layers: number; threads: number; batch: number; ubatch: number; mtp: boolean; draft: string; draft_max: number; draft_min: number; ngram_spec: boolean; kv: string; flash_attention: string; qsa: boolean; shared_vram: boolean; trunk_decode_q6k: boolean; parallel: number; vision: boolean; mmproj: string; prompt_cache_disk: boolean; prompt_cache_disk_mib: number }
 export type Status = {
   status: string; endpoint: string; runtime: string; runtime_available?: boolean; runtime_env?: Record<string, string>
   identity?: { pid: number }; model_path?: string; model_name?: string; log?: string; command?: string; adopted?: boolean; profile?: Profile
