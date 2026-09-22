@@ -7,13 +7,15 @@
  ],
  "produces": {
   "common/speculative.cpp": "aab538d6c13facbf32bdac85fa338b50993a65de167cfeb7b61bde78088e44b3",
-  "ggml/src/ggml-cuda/ggml-cuda.cu": "da1e7f99161831c181cdf0504e8b297bb9a2d7f281c8034f4b518a0abace1fc4",
-  "ggml/src/ggml-cuda/mmb.cu": "79ee5140c8f86a63875e3b008bdc10e5223dc5c574df187ab25283991ded1e1b",
+  "ggml/src/ggml-cuda/ggml-cuda.cu": "2c563fd8301d84136aafb8ffc386b5e40d7e16df84ebd5e7db60811312fdaccc",
+  "ggml/src/ggml-cuda/mmb.cu": "93e62856ec776917bf3251f10a8d4bbf22d31d10d46b8afd7ca24513aec67ae0",
   "ggml/src/ggml-cuda/mmb.cuh": "1bff81ef7a2b088fa32c886462156bbcb7c33bb689a9fbf71d0a88c57314238e",
   "ggml/src/ggml-cuda/mmid.cu": "81a71f35f96d2cbd19afafb8de89884010e4eef1c986a20991f177355d3b3924",
   "ggml/src/ggml-cuda/mmq-load-tiles.cuh": "0a43a30415c57c7d14d5f1cb03789fbd12850fa00cee9f7fb841d952b84c1484",
   "ggml/src/ggml-cuda/mmq.cuh": "fc09981f738c1c8458bc1e0298b49d4adf19386cfd45e893587b218d4db1e4c3",
   "ggml/src/ggml-cuda/mmvq.cu": "29ecfbe9feabd762c8781af0a9074c8484b1356a6359dc2e42152c56bc36a101",
+  "ggml/src/ggml-cuda/ple-conv.cu": "c885af63df027b0390de9915bbf51073c6205414045c35937c6c42f3eb980958",
+  "ggml/src/ggml-cuda/qsa.cu": "5c1c2b54a10d67387408e9c066aa151f48c51e60e833bddf8e1fb826d244468c",
   "ggml/src/ggml-cuda/softcap.cu": "e1c2bc8f06990f5b61cca50f6edb5892576ded44b42c4c00bade0d288c7fb3a0",
   "ggml/src/ggml-cuda/softcap.cuh": "423a18f7e553a56c4482d3284207e53607b8edbd0a0f07882b8fce5a4a0f5ebb",
   "ggml/src/ggml-cuda/strixllama-chain.cu": "729ca26728f7bd624320f5ebee9d65d67bcdcafa9acf26c88b386e6ab202b886",
@@ -21,9 +23,10 @@
   "ggml/src/ggml-cuda/strixllama-getrows-cast.cu": "5019f6b5201fd11d2d77c00a7a4df1ee387813d4acc28455fddd43105ec80a9a",
   "ggml/src/ggml-cuda/strixllama-getrows-cast.cuh": "ed9f51c30db922f743196cca350a1554067fd0fa021f404910ea6bea91d753dc",
   "ggml/src/ggml-cuda/vecdotq.cuh": "3b879a937d5143902db4cae2530529c32fd464dbfb822a7fe31875aba57707ce",
-  "src/llama-context.cpp": "25599f18687c7883444da1f90d64d52dc25c9cb0133540f113a15ec7ae632873",
+  "include/llama.h": "c0a99abe8091b8aa2eb5493bfcedc41cd4c5f9cf48193de1c11cfe799427b722",
+  "src/llama-context.cpp": "b181071d05d5188560bfe4b77d50efdc7d0423f97e707b6953d32dfa03cdc8e3",
   "src/llama-graph.cpp": "3a360aedfd5100961bc317471f56e5a45770f29b0c4d49fbca3bd112136e1d86",
-  "src/llama-lazy-reader.h": "94c18d968b0740a71be080597b9bebba11cd66545fe5c68f70c14bf38f14b42c",
+  "src/llama-lazy-reader.h": "4378a2edb78f1c840526e67b7d36d585f71e49cef48502bb618804c0216f417f",
   "src/llama-memory-hybrid-idx.cpp": "fbf336be84ee5495a24c176d9055f136f36b5414749fe10b120de0257a03a479",
   "src/llama-memory-hybrid-idx.h": "505973de6ae49812bec468d12b0765daaf2d8d69ad2cfabec427991ce03a6dc9",
   "src/llama-memory-recurrent.cpp": "201b89af2e54b20800090392ba111e7ae29c2d991976040ba6f302e324f1f869",
@@ -31,11 +34,11 @@
   "src/llama-model.cpp": "ee9b24fcd6227fea4e27dc5322fac0a08254d0483b1b0165767eabbabc9322dc",
   "src/llama-model.h": "934dfaf7862ed94699692cfe4d93f7a1fbd7b646d4577dbd0ba197ee2f953175",
   "src/models/block-graph.inc": "716077d2dd61f3d7edb94945eaf1cd4aa2bb86f452eff22832d9cf279d55ec07",
-  "src/models/qwen4exp.cpp": "96da4dc392117286c4399b3712c1278072cca44f347ca1c52825f8a3c221caa1",
+  "src/models/qwen4exp.cpp": "0ce19e9d1b0adcfc10d7e7e43daf4ccd5ec7b3cdf58fef433181b151f9c5a80c",
   "tests/test-backend-ops.cpp": "6c2a5e5e3ac7d840c6610ea7b70dca89de5d81e48ebcc56f239a6fe429e90e96",
-  "tools/server/server-context.cpp": "03814dcd5eacf4d90eb098348a38ba409005d13c085d765e6d230eb0167a9490",
-  "tools/server/server-task.cpp": "a0ef216f370e6f1a95aaa37e7bfb339dbe070b919673add5278af19c79949190",
-  "tools/server/server-task.h": "8012e53cf6c6b6fc29d78d8bee175a2ac45ca90aeebce9b5a3ede0e67b4be664"
+  "tools/server/server-context.cpp": "c708fabb765062d096c386ca2b0ef51b5aab90a8b07837677dfca1ead611c1ec",
+  "tools/server/server-task.cpp": "98db2e176c06588665460b36713f1e8b63de98c0526e0b57412a3bdf768fab71",
+  "tools/server/server-task.h": "8772cab48cb3701cd3d1c7276876ef059d173875ecf29412330568fba1aef8e3"
  },
  "repo": "https://github.com/pwilkin/llama.cpp",
  "revision": "f5daaa3cfa6358e5dd398911ec741813745a5440",
@@ -72,6 +75,14 @@
    "git_blob": "d7d1f53ac33683bf7abd8ac88c1e3990491edbda",
    "sha256": "9e1ec4c08ca05a288182d5668d49bcfdc984bad9e2945839f577771a45d440d1"
   },
+  "ggml/src/ggml-cuda/ple-conv.cu": {
+   "git_blob": "ed8d1f84077afc3e06ca7099b644caad178f6ad1",
+   "sha256": "a6a7a8a378353bb0e2adde4e759aff9a893c0d2c47ec56351f56e27fbd11ce1c"
+  },
+  "ggml/src/ggml-cuda/qsa.cu": {
+   "git_blob": "9b43528278a3be6bd744ed25d2b18983c3570df0",
+   "sha256": "9a809b350496f8e00d21063caa0b0ae284ff533bc07540dc930d75da3b4b078a"
+  },
   "ggml/src/ggml-cuda/softcap.cu": {
    "git_blob": "9f0fa1051cfe0844c5a7bff5c8295ae77bd7e8d6",
    "sha256": "a3ae060b52326da5185ad03ea880255fccd6c6515d979c49b864d00263f2a8d0"
@@ -83,6 +94,10 @@
   "ggml/src/ggml-cuda/vecdotq.cuh": {
    "git_blob": "f2a6f2009c9ac907b6002667a49dcb6c2e75be56",
    "sha256": "a7fd4281ad9f0a6d9373c776325411d2522e0b62ffae2c16e91e667a1af251fe"
+  },
+  "include/llama.h": {
+   "git_blob": "1a2cad1d0abef7ff8a2476721f500b2b52da0e20",
+   "sha256": "9d50261c7dfa0273f7ef70fc9d10ba5f86156ca003398efec0c5a502cb5e64aa"
   },
   "src/llama-context.cpp": {
    "git_blob": "348fbbae1a222bd78fc755d0f337c41d80afee01",

@@ -330,3 +330,20 @@ main loop after each job; see `review_20260923` in the results file.
 `tools/make_patch_script.py` changed with it: when fine hunks do not replay, nearby hunks are merged
 with a doubling gap before falling back to one hunk for the whole span. This patch was 12247 lines as
 one hunk and 2243 as 18; with the review fixes it is 2652 lines as 62.
+
+## Addendum 2026-09-23: four patches after 0.1.7
+
+The delta is now 33 files (29 modified, 4 added): `ggml/src/ggml-cuda/qsa.cu`, `ple-conv.cu` and
+`include/llama.h` join the upstream side of `bootstrap/UPSTREAM.json`. Replay 33 / 33, 31 patches.
+Measured in `docs/results/perf-round-20260923.json`.
+
+| patch | files | what |
+|---|---|---|
+| `apply_hc_q8_fusions` | `mmb.cu`, `ggml-cuda.cu`, `ple-conv.cu` | the HC gate kernel (GEMM + sigmoid + stream mix) and the tall 384-row tile for Q8_0 weights, and the PLE conv fusion for an F32 weight - Unsloth's types, which left `LLAMA_HC_GATEMIX` and `LLAMA_PLE_CONV` inert. The Q8_0 gate kernel reads the streams in F32 and keeps the gate in F32, so it is bitwise the unfused path; the PLE match also refuses a graph in which anything outside the fused taps reads the concat's body |
+| `apply_qsa3_bitonic` | `qsa.cu` | QSA3 selection rows sorted with a bitonic sort instead of an O(ns^2) rank sort (after pwilkin/llama.cpp 38477e8c); same rows |
+| `apply_disk_restore_lazy` | `server-task.h`, `server-task.cpp`, `server-context.cpp` | a version 2 entry's chunks read by four threads, its checkpoints left in the store and pinned for the slot like paged-out ones: 5.63 GiB / 2724 ms became 2.33 GiB / 734 ms for a 79K-token conversation |
+| `apply_ple_pregather` | `llama.h`, `llama-context.cpp`, `llama-lazy-reader.h`, `qwen4exp.cpp`, `server-context.cpp` | `llama_strix_prefetch`: the server gathers the next prompt batch's PLE rows while the current one computes, and that batch's `set_input` takes them; the prefetch hook, which `llama_decode` calls for every model, no longer casts a model of another architecture |
+
+Every one of them was checked for identical output: 48 greedy tokens with their top-5 logprobs for the
+fusions and the sort, the tokens of a continue / rewind / return sequence for the restore, the generated
+text of a 95.6K-token prefill for the pregather.

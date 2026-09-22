@@ -60,6 +60,9 @@ PATCH_ORDER = [
     "apply_cache_ram_and_mtp",      # after apply_prompt_cache_disk: it rewrites the tier that one adds
     "apply_spc_direct_io",          # after it: the reader it replaces is the one that patch leaves
     "apply_disk_tier_v2",           # after both: it rewrites the disk tier they built
+    "apply_hc_q8_fusions", "apply_qsa3_bitonic",
+    "apply_disk_restore_lazy",      # after apply_disk_tier_v2: the restore path it changes is that one's
+    "apply_ple_pregather",          # after apply_disk_restore_lazy: both edit the server loop
 ]
 
 # The ROCm SDK is installed as Python wheels, which is the only form AMD ships for Windows - the

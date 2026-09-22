@@ -1,0 +1,40 @@
+{
+ "question": "after 0.1.7: the ideas from halogen, pwilkin and halo-box that transfer, and the prefill profile of this morning - what each one buys on this machine, without changing a single output token",
+ "equivalence": {
+  "method": "tmp/fusion_equiv_probe.py: an 18643-token real-text prompt, 48 greedy tokens with n_probs = 5, MTP off; the fused build with the gates on, the same build with LLAMA_HC_GATEMIX/PACK_DI/MMB_TALL/PLE_CONV = 0, and the 0.1.7 runtime",
+  "result": "all 48 tokens and every top-5 logprob identical, fused against unfused and unfused against 0.1.7 (which also covers the bitonic sort, not gated)",
+  "fired": "MMB_TALL (wide 384x64) for the M=320 HC down projection, HC_GATEMIX with F32 streams (Q8_0 weights), PLE_CONV with the F32 conv weight"
+ },
+ "hc_q8_fusions": {
+  "what": "hc_gate_mix_kernel for Q8_0 weights, with a variant that reads the streams in F32 and applies the sigmoid to the F32 accumulator - the unfused MMB GEMM + hc_mix_reduce, without the [hc*E, T] gate going to memory and back; the tall 384-row tile for Q8_0; the PLE conv fusion for an F32 weight",
+  "correction": "this morning's profile read SIGMOID [10240, T] as unfused; it is hc_mix_reduce, already fused (sigmoid + mix, charged to its first node). What the gate-mix fusion removes is the gate's round trip through memory.",
+  "first_ubatch": "GPU time 7592 -> 7245 ms (-4.6%) at depth 2.3K: hc_up GEMM 451 ms + mix 344 ms became 535 ms of fused kernel; the tall tile moved the M=320 down projection 354 -> 355 ms (nothing); the inject stays a separate F32 GEMM because Unsloth keeps it in F32 (so no down+inject packing)"
+ },
+ "restore": {
+  "probe": "tmp/cache_restore_probe.py: the 79441-token conversation converted to a version 2 entry, the server restarted, then continue / edit 2000 tokens back / back to the original; 0.1.7 runtime as reference",
+  "read": "0.1.7: 5.630 GiB in 2724 ms (file 1607 ms at 3588 MB/s, buffers 857 ms); now 2.332 GiB in 734 ms (file 407 ms at 5870 MB/s, buffers 327 ms), 30 checkpoints left on disk",
+  "continue": "request wall 4.75 -> 2.57 s; server working set 4.52 -> 2.74 GB",
+  "rewind": "the edit paged its checkpoint in (76544 tokens, 44 ms); the tokens of all three steps are identical to 0.1.7's"
+ },
+ "prefill_real_text": {
+  "prompt": "tmp/realtext.txt, 95582 tokens, production flags (STRIX_DECODE_TIMING, no graph sync), one run each",
+  "0.1.7": "112.95 s = 846.3 t/s (PLE gathers 4.98 s)",
+  "fusions + bitonic, prefetch off": "110.74 s = 863.1 t/s (+2.0%)",
+  "+ prefetch of the next batch": "107.17 s = 891.9 t/s (+5.4%); gathers 3.39 s, now mostly from the file cache",
+  "+ pregather (shipped)": "107.60 s = 888.3 t/s; set_inputs 17-39 ms a batch instead of 200-360 - the gather is off the critical path, and the wall time says the GPU is the bottleneck now",
+  "same text": "the 16 generated tokens identical across the runs",
+  "note": "LLAMA_GRAPH_TIMING synchronises after every graph and made the gather look like idle GPU time; with it off, llama_decode returns after submitting and most host work overlaps the previous batch"
+ },
+ "regenerate": {
+  "probe": "tmp/regen_probe.py, the chat endpoint, a 9761-token prompt",
+  "regenerate": "the same messages again: checkpoint at 9757 (the prompt end minus 4, upstream's placement), 4 tokens processed, 1.58 s with a 64-token answer",
+  "edit of the question": "checkpoint at 1569 (the end minus 4 + ubatch), 8192 tokens processed, 9.2 s",
+  "conclusion": "the 2500-3600-token replay in docs/results.md came from resending the whole conversation including the answer; a regenerate from Jan resends the messages without it. Finer resume points buy nothing here."
+ },
+ "decode_profile": {
+  "short context": "MTP pass 72.5 ms median = verify 59.4 + draft 9.6 + host ~3.5; 2.81 tokens a pass; ~42 ms of the verify is weight bytes",
+  "depth": "the 4-token verify graph at 85K against 2K (node timing, graphs off): +10.3 ms of which ~3-4 is the extra dispatches' event overhead; the rest is the QSA gathers (KV cells 1.6 ms, block keys 1.2 ms), scoring and top-k",
+  "first-call cost": "one MUL_MAT [640,16] costs 152 ms once per server (a BLAS first use) and looked like 0.85 ms a layer when averaged over 15 graphs",
+  "ablation": "zero-filling GATED_DELTA_NET made the verify 16 ms slower, not faster: with garbage states the router picks more distinct experts. Op ablation does not measure cost in a MoE model."
+ }
+}
