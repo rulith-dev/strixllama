@@ -28,7 +28,7 @@ full prefill, **on a freshly started server** (see the image note below — that
 
 | | | |
 |---|---|---|
-| prefill, 85K tokens | **886 t/s** | 886.2 / 883.7 / 887.6 over 3 runs |
+| prefill, 95.6K tokens of real text | **983 t/s** | 982.1 / 979.6 / 988.7 over 3 runs, 0.1.9 |
 | decode, 85K context | **28.7 ms/token** (34.9 tok/s) | 29.45 / 28.25 / 28.25, draft acceptance 68-69%, 2.99 tokens per pass |
 | decode, short context | **26.8 ms/token** (37.4 tok/s) | 27.47 / 26.37 / 26.42, acceptance 60%, 2.70 tokens per pass |
 | image input | works | Qwen3-VL projector, 904 MB |
@@ -36,8 +36,14 @@ full prefill, **on a freshly started server** (see the image note below — that
 For reference, the same model in LM Studio on this machine decodes at about 18 tok/s.
 
 The first run of each group is a warm-up: 29.45 against 28.25 twice, 27.47 against 26.4 twice. The
-prefill figures need no such caveat — 886.2 / 883.7 / 887.6 is the tightest spread in this document,
-and that is what `GGML_HIP_ENABLE_UNIFIED_MEMORY=0` bought.
+prefill figures need no such caveat — runs land within 1% of each other, which is what
+`GGML_HIP_ENABLE_UNIFIED_MEMORY=0` bought.
+
+The prefill row is 0.1.9's, measured 2026-09-23, each run on a fresh server:
+`tools/decode_lab.py --config dectime --words 700 --n 4 --gen 16 --gen-prefix <text> --gen-prefix-chars 340000`,
+where the text is llama.cpp's own docs, tool READMEs and `src/llama-*.cpp` concatenated (95,582
+tokens). 0.1.8 gave 888.3 / 892.9 / 889.7 on the same text, and the 2026-09-19 build 886.2 / 883.7 /
+887.6 on 85K tokens of prose.
 
 ### A slot that has served an image decodes ~7% slower until it is cleared
 
@@ -121,6 +127,18 @@ while the current one computes). The graph-timing instrumentation had made that 
 GPU time; it synchronises after every graph, and without it most host work overlaps the previous
 batch. Two cheap A/Bs measured nothing worth their cost: ubatch 16384 +2.7%, `ROCBLAS_USE_HIPBLASLT=1`
 +0.3%. Details: `docs/results/prefill-profile-20260923.json`, `docs/results/perf-round-20260923.json`.
+
+**The expert gate/up, rebuilt for this GPU (0.1.9).** On gfx1151 the VALU and the WMMA unit never run at
+the same time on a SIMD: every vector instruction adds about a cycle to a stream of 32-cycle WMMAs, so a
+dequantizing GEMM is priced in vector instructions per matrix op. The routed IQ3_S gate/up + SwiGLU
+spent ~9 of them per weight and waited on its weight loads at every step. `apply_moe_glu3` spreads
+the dequantization over the whole block, puts the sign on an F16 copy of the grid so the scale
+product is one `v_fma_mix` (exact, so the same BF16), keeps the loads whole and off the critical path,
+and takes experts of 32 rows or more as big tiles. At 8192 tokens on the model's recorded routing a
+layer went 35.9 → 19.9 ms; the 95.6K-token prefill 890 → 983 t/s; every output token and top-5
+probability is unchanged. The IQ4_NL down projection is a different animal: without its WMMAs it still
+takes 74% of its time - ten steps per tile, weights streamed in and 839 MB of F32 expert outputs a
+layer written out for the weighted sum. Details: `docs/results/moe-glu3-20260923.json`.
 
 ## Correctness
 

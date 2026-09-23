@@ -9,11 +9,12 @@ Target: **Ryzen AI Max+ 395** (Radeon 8060S, gfx1151, 128 GB unified memory) run
 
 ## Where it stands
 
-Measured on the target machine, 85K tokens of real prose, speculative decoding on:
+Measured on the target machine: prefill over 95.6K tokens of real text; decode at 85K tokens of real
+prose, speculative decoding on:
 
 | | |
 | --- | --- |
-| prefill | **886 t/s** |
+| prefill | **983 t/s** |
 | decode, 85K context | **28.7 ms/token** (34.9 tok/s at 68% draft acceptance) |
 | decode, short context | **26.8 ms/token** (37.4 tok/s at 60% acceptance) |
 | image input | supported (Qwen3-VL projector) |
@@ -57,12 +58,13 @@ Optional: `integrations/jan/apply.py` overlays three management pages into a
 
 ## What is actually in here
 
-The whole delta against upstream llama.cpp is **30 files** — 26 modified, 4 added, out of 3610. The
+The whole delta against upstream llama.cpp is **34 files** — 30 modified, 4 added, out of 3610. The
 substantial pieces:
 
 | | |
 | --- | --- |
 | **IQ3_S matrix-core path** | 52% of this model's body is stored as IQ3_S, which the MMB dequant GEMM did not accept, so half the weights never reached the matrix cores. +5.6% prefill. |
+| **Expert kernels priced for this GPU** | On gfx1151 the vector units and the matrix cores never run at the same time, so every instruction a dequantizing GEMM spends unpacking weights is matrix time lost. The routed IQ3_S gate/up, prefill's largest kernel, rebuilt around that: 35.9 → 19.9 ms a layer, prefill +10%, bitwise the same output. |
 | **Sparse attention at decode** | The sparse kernel needs a packed layout only prefill builds, so a decoded token attended densely over the whole cache. Gathering the selected cells instead: 97K decode 59.0 → 49.3 ms/token, and the context slope drops from 0.188 to 0.067 ms per 1000 tokens. |
 | **MTP speculation, tuned** | Draft head with its own IQ4_XS output projection, three draft tokens, n-gram drafting off. 85K decode 21.5 → 34.9 tok/s. |
 | **Two correctness fixes** | Speculative verification batches ran dense attention with no causal mask, so long answers drifted and stopped early. Image input aborted the server three separate ways in the QSA block machinery. |
@@ -84,12 +86,12 @@ happily if the tree was edited by hand and re-recorded afterwards. The strong qu
 recipe still rebuilds the tree from nothing, and that has its own tool:
 
 ```bash
-python tools/replay_bootstrap.py          # clean upstream + patch set == the 30 files, byte for byte
+python tools/replay_bootstrap.py          # clean upstream + patch set == the 34 files, byte for byte
 ```
 
-It restores the 26 modified files to upstream from the clone's own git objects, addressed by the blob
+It restores the 30 modified files to upstream from the clone's own git objects, addressed by the blob
 hashes in `bootstrap/UPSTREAM.json` — so clean upstream is reconstructed rather than trusted — then
-replays the snapshot and every script and compares. It reports **30 / 30**.
+replays the snapshot and every script and compares. It reports **34 / 34**.
 
 It was not always so. Five of the 24 were owned by no script at all - including the largest measured
 win in the project, which a clean rebuild would have silently dropped - and three scripts had drifted
