@@ -389,3 +389,12 @@ Measured in `docs/results/kv-regions-20260923.json`.
 | `apply_kv_regions` | `llama-kv-cells.h`, `llama-kv-cache.cpp`, `.h`, `llama-graph.cpp`, `.h`, `llama-memory-hybrid-idx.cpp`, `.h`, `qwen4exp.cpp`, `prefix.h` | with several slots every conversation keeps one run of the pool, in slot order: its tokens go after its last cell, a new one starts after the last with room left to the one before it, and a batch that does not fit has the pool laid out again first - the conversations keep their order and slide, each one of the batch gets the same room after it, idle ones none (device copies of K/V, indexer keys and block keys, queued on the graphs' stream in `init_batch`). A batch's graph views only the run of its own conversations. One conversation beside idle ones computes bitwise what it computes on one slot, MTP included, at the same speed (MTP 32.8 -> 38.5 tok/s beside 70K idle tokens; one slot 37.8); block keys go stale per sequence. `LLAMA_KV_REGIONS=0` turns it off, `LLAMA_KV_WINDOW=0` the window, `LLAMA_KV_REGION_MOVES=0` the moves; `LLAMA_KV_REGION_HEADROOM` sets the room |
 | `apply_compute_buffer_headroom` | `ggml-alloc.c` | compute buffers get 3% + 16 MiB of headroom: a graph a few MiB larger no longer frees and reallocates the 3.4 GiB target buffer, whose commit ROCm on Windows keeps - the intermittent "bad allocation". Four conversations: peak commit 90.4 -> 83.7 GB, with 6.9 GB to spare instead of 0.18. `GGML_ALLOC_COMPUTE_PAD=0` turns it off, `GGML_ALLOC_DEBUG=1` reports reallocations |
 | `apply_alloc_failure_report` | `server-context.cpp` | a failing `operator new` prints its size and call stack before the server reports "bad allocation" |
+
+## Addendum 2026-09-24: `apply_empty_slot_cache`
+
+No new files in the delta (40: 36 modified, 4 added); replay 40 / 40, 39 patches. Measured in
+`docs/results/kv-pool-20260924.json`.
+
+| patch | files | what |
+|---|---|---|
+| `apply_empty_slot_cache` | `server-context.cpp` | a slot named by id that holds nothing takes the prompt-cache path: `f_keep` was 0/0 there, a NaN that compares false, so a 173K-token conversation sent back to its emptied slot was processed again from its first token (186 s) although the disk tier held all of it; now it is read back (7 s) |

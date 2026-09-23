@@ -65,7 +65,7 @@ PATCH_ORDER = [
     "apply_ple_pregather",          # after apply_disk_restore_lazy: both edit the server loop
     "apply_state_copy_trim",        # after apply_ple_pregather: both edit qwen4exp.cpp
     "apply_moe_glu3",
-    "apply_qsa_active_blocks", "apply_state_read_coalesce", "apply_kv_regions", "apply_compute_buffer_headroom", "apply_alloc_failure_report",
+    "apply_qsa_active_blocks", "apply_state_read_coalesce", "apply_kv_regions", "apply_compute_buffer_headroom", "apply_alloc_failure_report", "apply_empty_slot_cache",
 ]
 
 # The ROCm SDK is installed as Python wheels, which is the only form AMD ships for Windows - the

@@ -43,7 +43,7 @@
   "src/models/qwen4exp.cpp": "555531c21df3142570cefb4b1a7c9f96786c9f267041236d669d9fbbae6d7b4c",
   "src/prefix.h": "8ff0afa90c0f8a93411faf13de1d989ee8b8877518be15fcb40d31c464dc4afa",
   "tests/test-backend-ops.cpp": "63b40d1aa142a62032da8bab47b53513b688fe8a18b6980ac07300f672c007c0",
-  "tools/server/server-context.cpp": "64609b0562928edd3646799e7da37ece3ebdfbd1eaa8196864e3bd2421722581",
+  "tools/server/server-context.cpp": "c3e71bd4cede73db5e21b9e5eeed9b7c2dff26de7d97e510152f3f9bf62dbbab",
   "tools/server/server-task.cpp": "98db2e176c06588665460b36713f1e8b63de98c0526e0b57412a3bdf768fab71",
   "tools/server/server-task.h": "8772cab48cb3701cd3d1c7276876ef059d173875ecf29412330568fba1aef8e3"
  },

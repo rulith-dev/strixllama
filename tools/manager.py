@@ -95,6 +95,13 @@ PROMPT_CACHE_RAM_MIB = 1024
 # in the background and only what changed (a few hundred MB for a 79K-token conversation, against 5.7 GB for
 # the whole state): a restart loses at most this much, and a slot can be freed later without writing anything
 PROMPT_CACHE_BLOCK_TOKENS = 4096
+# the largest KV pool a profile may ask for (kv_pool): four full-length conversations. What actually fits is the
+# GPU carve and the commit limit's business; this only stops a typo from asking for terabytes
+KV_POOL_MAX = 1048576
+# a loaded server is flagged (status()['commit_low']) when Windows has less commit than this left: four
+# ~24K conversations took ~4 GB of it after the load, and two long ones keep up to ~3.5 GB of context
+# checkpoints each in RAM
+COMMIT_LOW_BYTES = 8 << 30
 HIDDEN = 0x08000000 if os.name == 'nt' else 0
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -131,6 +138,7 @@ ERRORS = {
     'draft_min': 'The MTP threshold must be between 0 and 1',
     'ubatch_gt_batch': 'ubatch cannot be larger than batch',
     'context_exceeds': 'The context is longer than the model declares',
+    'kv_pool_below_context': 'The KV pool must hold at least one conversation of the full context ({context} tokens), or be 0',
     'kv_fixed': 'This configuration keeps the KV cache at f16',
     'flash_attention_value': 'Flash Attention must be on or off',
     'draft_path': 'The draft model path is invalid',
@@ -201,6 +209,14 @@ DEFAULTS = dict(context=262144, gpu_layers=999, threads=16, batch=8192, ubatch=8
                 # compact metadata. Raise it only when concurrent requests are worth that memory; the
                 # throughput is real (1/2/4 streams = 19.0/30.6/47.1 tok/s, tools/decode_concurrency.py).
                 parallel=1,
+                # kv_pool: the cells of the one KV pool that several slots share (-kvu), when it should hold more
+                # than one conversation at full length: each conversation stays capped at `context`
+                # (--kv-unified-per-slot) and the pool is one allocation of any size, rounded up to 256 cells.
+                # 0 = the pool is the context. For this model every cell costs ~32.5 KiB of GPU memory -
+                # 262144 cells: target K/V 6 GiB, indexer 0.75, block keys 0.75, the draft's 0.63 - and the
+                # target's K/V is one allocation, which on this machine counts against Windows' commit limit.
+                # Ignored with one slot, whose pool is its context.
+                kv_pool=0,
                 # trunk_decode_q6k: Q6_K in-memory copies of the Q8_0 trunk for decode-sized batches (HIP);
                 # +2.9 GB VRAM, prefill untouched, decode -9%. Off by default so smaller carves still load.
                 trunk_decode_q6k=False,
@@ -531,7 +547,7 @@ def validate_profile(raw, model):
     if not isinstance(raw, dict) or set(raw) - set(DEFAULTS): fail('unknown_field')
     cfg = {**profile(model), **raw}
     bounds = dict(context=(512,262144), gpu_layers=(0,999), threads=(1,32), batch=(32,32768), ubatch=(32,32768), draft_max=(1,8), parallel=(1,8),
-                  prompt_cache_disk_mib=(1024,262144))
+                  prompt_cache_disk_mib=(1024,262144), kv_pool=(0,KV_POOL_MAX))
     for field, (low, high) in bounds.items():
         if type(cfg[field]) is not int or not low <= cfg[field] <= high: fail('out_of_range', field=field, low=low, high=high)
     for field in ('mtp', 'ngram_spec', 'qsa', 'shared_vram', 'trunk_decode_q6k', 'vision', 'prompt_cache_disk'):
@@ -542,6 +558,7 @@ def validate_profile(raw, model):
     if type(cfg['draft_min']) not in (int,float) or not 0 <= cfg['draft_min'] <= 1: fail('draft_min')
     if cfg['ubatch'] > cfg['batch']: fail('ubatch_gt_batch')
     if model.get('context') and cfg['context'] > model['context']: fail('context_exceeds')
+    if cfg['kv_pool'] and cfg['kv_pool'] < cfg['context']: fail('kv_pool_below_context', context=cfg['context'])
     if cfg['kv'] != 'f16': fail('kv_fixed')
     if cfg['flash_attention'] not in ('on', 'off'): fail('flash_attention_value')
     if not isinstance(cfg['draft'], str): fail('draft_path')
@@ -614,7 +631,16 @@ def dedicated_vram_bytes():
 
 def memory_fingerprint(cfg):
     """The profile fields that decide how much device memory a load takes."""
-    return {k: cfg.get(k) for k in ('context', 'batch', 'ubatch', 'parallel', 'gpu_layers', 'mtp', 'draft', 'vision', 'mmproj', 'trunk_decode_q6k')}
+    return {k: cfg.get(k) for k in ('context', 'batch', 'ubatch', 'parallel', 'gpu_layers', 'mtp', 'draft', 'vision', 'mmproj', 'trunk_decode_q6k', 'kv_pool')}
+
+
+def kv_pool_cells(cfg):
+    """The cells of the KV pool a load allocates: the context, or with several slots the kv_pool setting when it
+    is larger, rounded up to the 256 cells llama.cpp pads the pool to."""
+    pool = cfg['context']
+    if cfg.get('parallel', 1) > 1 and cfg.get('kv_pool', 0) > pool:
+        pool = (cfg['kv_pool'] + 255) // 256 * 256
+    return pool
 
 
 def unified_memory(model, cfg):
@@ -693,7 +719,8 @@ def runtime_environment(cfg, unified=False):
 
 
 def argv(model, cfg):
-    args = [str(selected_runtime(cfg)), '-m', model['path'], '-ngl', str(cfg['gpu_layers']), '-c', str(cfg['context']),
+    pool = kv_pool_cells(cfg)
+    args = [str(selected_runtime(cfg)), '-m', model['path'], '-ngl', str(cfg['gpu_layers']), '-c', str(pool),
             '-b', str(cfg['batch']), '-ub', str(cfg['ubatch']), '-t', str(cfg['threads']), '--poll', '0',
             '--fit', 'off', '-np', str(cfg.get('parallel', 1)), '-fa', cfg['flash_attention'], '-ctk', 'f16', '-ctv', 'f16', '--jinja',
             '--host', '127.0.0.1', '--port', str(PORT)]
@@ -701,6 +728,9 @@ def argv(model, cfg):
         # without it the pool is split evenly and each slot would see context/parallel tokens; -kvu keeps one
         # shared pool so a single conversation can still use the whole context when the others are idle
         args += ['-kvu']
+        if pool > cfg['context']:
+            # a pool larger than one conversation (kv_pool): each conversation is still capped at the context
+            args += ['--kv-unified-per-slot', str(cfg['context'])]
     think = cfg['thinking'] if not isinstance(cfg['thinking'], bool) else ('high' if cfg['thinking'] else 'off')
     kwargs = ({'enable_thinking': False} if think == 'off'
               else {'enable_thinking': True, 'reasoning_effort': THINKING[think]})
@@ -725,6 +755,25 @@ def argv(model, cfg):
         args += ['-md', cfg['draft'], '-ngld', str(cfg['gpu_layers']), '--spec-draft-n-max', str(cfg['draft_max']), '--spec-draft-p-min', str(cfg['draft_min'])]
     if spec_types: args += ['--spec-type', ','.join(spec_types)]
     return args
+
+
+class _MemoryStatus(ctypes.Structure):
+    _fields_ = [('dwLength', wintypes.DWORD), ('dwMemoryLoad', wintypes.DWORD)] + \
+               [(name, ctypes.c_ulonglong) for name in ('ullTotalPhys', 'ullAvailPhys', 'ullTotalPageFile', 'ullAvailPageFile',
+                                                         'ullTotalVirtual', 'ullAvailVirtual', 'ullAvailExtendedVirtual')]
+
+
+def commit_bytes():
+    """Windows' commit limit (RAM + page file) and what is left of it, or None where it cannot be read.
+
+    On this machine the GPU's large allocations count against it one for one - the weights, the target's K/V,
+    the compute buffers - and so do the context checkpoints a long conversation keeps in RAM (~113 MiB every
+    ~8K tokens, up to 32 a slot). When it runs out, whatever allocates next fails and the server reports
+    "bad allocation", however much GPU memory is free (docs/measuring.md)."""
+    if os.name != 'nt': return None
+    ms = _MemoryStatus(); ms.dwLength = ctypes.sizeof(ms)
+    if not ctypes.WinDLL('kernel32').GlobalMemoryStatusEx(ctypes.byref(ms)): return None
+    return ms.ullTotalPageFile, ms.ullAvailPageFile
 
 
 def process_identity(pid, terminate=False, expected=None):
@@ -839,6 +888,12 @@ def status():
                 models=http_json('/v1/models')['data']
                 result['served_models']=models
         except Exception: pass
+        # a loaded server with little commit left fails its next allocation with "bad allocation"; say so
+        # while there is still time to shrink the pool or enlarge the page file
+        commit = commit_bytes()
+        if commit and result['status'] == 'ready':
+            result['commit_limit'], result['commit_available'] = commit
+            result['commit_low'] = commit[1] < COMMIT_LOW_BYTES
     return result
 
 

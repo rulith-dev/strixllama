@@ -193,6 +193,21 @@ class ManagerTests(unittest.TestCase):
             stack.enter_context(p)
         popen=stack.enter_context(patch.object(m.subprocess,'Popen',return_value=SimpleNamespace(pid=123)))
         return stack,popen
+    def test_a_ready_server_with_little_commit_left_is_flagged(self):
+        model=first_model()
+        ident={'pid':123,'exe':str(m.RUNTIME.resolve()),'birth':456}
+        stack,popen=self.running([ident])
+        with stack:
+            m.handle('start',{'id':model['id'],'profile':{'mtp':False}})
+            answers=lambda path:{'status':'ok'} if path=='/health' else {'data':[]}
+            with patch.object(m,'http_json',side_effect=answers):
+                for available,low in ((20<<30,False),(3<<30,True)):
+                    with self.subTest(available=available),patch.object(m,'commit_bytes',return_value=(128<<30,available)):
+                        s=m.status()
+                        self.assertEqual((s['status'],s['commit_available'],s['commit_low']),('ready',available,low))
+            # still loading: nothing to say about commit yet
+            with patch.object(m,'commit_bytes',return_value=(128<<30,1<<30)):
+                self.assertNotIn('commit_low',m.status())
     def test_out_of_memory_falls_back_to_shared_memory_once_and_is_remembered(self):
         model=first_model()
         ident={'pid':123,'exe':str(m.RUNTIME.resolve()),'birth':456}
@@ -452,7 +467,21 @@ class ManagerTests(unittest.TestCase):
         with self.assertRaises(m.ManagerError) as caught:m.validate_profile({'context':1},self.model)
         self.assertEqual((caught.exception.code,caught.exception.params),('out_of_range',{'field':'context','low':512,'high':262144}))
         self.assertIn('between 512 and 262144',str(caught.exception))
-        for code in m.ERRORS: m.ERRORS[code].format(**{k:'' for k in ('field','low','high','levels','name','head','base','limit')})
+        for code in m.ERRORS: m.ERRORS[code].format(**{k:'' for k in ('field','low','high','levels','name','head','base','limit','context')})
+    def test_a_kv_pool_larger_than_the_context_holds_more_conversations_each_capped_at_the_context(self):
+        cfg=m.validate_profile({'parallel':4,'vision':False,'mtp':False,'kv_pool':40000},self.model)
+        args=m.argv(self.model,cfg)
+        self.assertEqual(args[args.index('-c')+1],'40192')   # one allocation, rounded up to 256 cells
+        self.assertEqual(args[args.index('--kv-unified-per-slot')+1],str(cfg['context']))
+        # 0, or a single slot: the pool is the context and nothing caps the slots
+        for raw in ({'parallel':4,'vision':False,'mtp':False},{'parallel':1,'mtp':False,'kv_pool':40000}):
+            args=m.argv(self.model,m.validate_profile(raw,self.model))
+            self.assertEqual(args[args.index('-c')+1],str(m.profile(self.model)['context']))
+            self.assertNotIn('--kv-unified-per-slot',args)
+        with self.assertRaises(m.ManagerError) as caught:m.validate_profile({'parallel':4,'vision':False,'kv_pool':1000},self.model)
+        self.assertEqual(caught.exception.code,'kv_pool_below_context')
+        # the pool decides the load's memory, so a load that ran out of it is not remembered for another size
+        self.assertNotEqual(m.memory_fingerprint(cfg),m.memory_fingerprint(dict(cfg,kv_pool=0)))
     def test_disk_prompt_cache_is_a_switch_that_sets_the_server_environment(self):
         on=m.runtime_environment(m.validate_profile({'mtp':False},self.model))
         self.assertEqual(Path(on['STRIX_PROMPT_CACHE_DIR']),m.DATA/'prompt-cache');self.assertEqual(on['STRIX_PROMPT_CACHE_MIB'],str(m.PROMPT_CACHE_DISK_MIB))

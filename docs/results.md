@@ -166,6 +166,16 @@ buffers now get a little headroom and are never reallocated: the four conversati
 6.9 GB of commit to spare, where 0.1.10 got to within 0.18 GB. Details:
 `docs/results/kv-regions-20260923.json`.
 
+**A KV pool larger than the context (2026-09-24).** Several slots share one pool of the context's size,
+so two long conversations cannot both stay resident. `kv_pool` makes it larger (llama.cpp's own
+`--kv-unified-per-slot` keeps each conversation at the context): at 393216 cells, conversations of 173K
+and 155K tokens both stayed resident and each answered its next question in under a second, and four
+concurrent conversations ran as fast as before (47.2 against 47.7 tok/s). Each cell costs ~39 KiB of GPU
+memory and ~24 KiB of Windows commit, and commit is what runs out on this machine: 524288 cells fitted
+the carve but failed with "bad allocation". The same test found the default pool re-processing a
+conversation sent back to its emptied slot by id - 186 s where the disk tier had it all - fixed:
+7 s now. Details: `docs/results/kv-pool-20260924.json`.
+
 **The build layout ran on the display driver's HIP runtime (found 2026-09-24).** A build run from
 `bin/hip-rocm101` or the build directory had no ROCm DLLs beside it, and Windows searches System32 before
 PATH, so it loaded the driver's `amdhip64_7.dll` instead of the SDK's that the bundle ships. Same binaries,

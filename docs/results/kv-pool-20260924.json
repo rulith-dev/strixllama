@@ -1,0 +1,29 @@
+{
+ "question": "can several slots share a KV pool larger than one conversation's context, so that two long conversations stay resident; what does it cost, and what limits it on this machine",
+ "setup": "production profile with 4 slots, MTP on, image input off; the release runtime from bin/hip-rocm101, which since 0.1.11 loads the SDK's HIP runtime like the bundle. The pool is llama.cpp's own: -c <pool> with -kvu and --kv-unified-per-slot <context>, set by the manager from the profile field kv_pool",
+ "allocations": {
+  "262144 cells": "target K/V 6144 MiB, indexer 768, block keys 768, compute 3352; draft K/V 512 + 64 + 64, compute 1492; weights 61222 + 2130; recurrent state 1801 - 78.3 GiB of the 96 GiB carve",
+  "524288 cells": "target K/V 12288 MiB, indexer 1536, compute 3729 (+376); draft K/V 1024 + 128, compute 2743 (+1251): the draft's worst-case reserve holds a dense mask over the whole pool",
+  "per cell beyond the context": "about 39 KiB of GPU memory (32.5 of K/V, indexer and block keys, ~6.3 of compute buffers) and about 24 KiB of Windows commit (131072 cells: +3.03 GiB at load)"
+ },
+ "four_conversations": {
+  "262144": "47.7 tok/s aggregate (four 22.7-24.9K conversations, 128 tokens each, tmp/kvr/conc_probe.py); commit left 12.0 GiB after the load, 6.8 at the peak",
+  "393216": "47.2 tok/s; 7.3 GiB after the load, 2.3 at the peak",
+  "524288": "the second prefill failed: an 84 MB operator new, \"bad allocation\" - the commit limit, not the carve"
+ },
+ "two_long_conversations": {
+  "the test": "tmp/kvr/two_long_probe.py: A (173.5K tokens) into slot 0, B (155.3K) into slot 1, then a question to A and one to B, the disk tier on",
+  "pool 393216": "both stay resident: the question to A processed 21 tokens (0.6 s), the one to B 14 (0.3 s). Commit ran down to 0.04 GiB while B was prefilled, and the disk tier could not get the 5 GB buffers it gathers a long conversation into, so neither was written to disk",
+  "pool 262144": "B pushes A out to the disk tier and A pushes B out again: the question to A read 173.5K tokens back from disk and processed 21 (7 s in all), the one to B 14 (5 s). Swapping two long conversations also takes commit down to 0.01 GiB here: one is gathered for the disk while the other is read back; the disk tier declines a gather it has no memory for (\"not enough memory to gather 5082.890 MiB of state\") and the conversation it skipped had been written already",
+  "the slot fix": "before apply_empty_slot_cache the same run processed both conversations again from their first token (186 s and 162 s): a slot named by id that held nothing computed f_keep = 0/0, a NaN, and skipped the prompt cache. The app names no slot and was not affected"
+ },
+ "manager": {
+  "kv_pool": "profile field, 0 = the context; with several slots a larger value becomes -c, rounded up to 256 cells, with --kv-unified-per-slot at the context; ignored on one slot; below the context is refused",
+  "commit warning": "a ready server reports Windows' commit limit and what is left of it; under 8 GiB the page warns that the next large allocation can fail and suggests a smaller pool or a larger page file"
+ },
+ "reading": "the pool is a setting, not a design limit: 393216 cells hold two long conversations at no cost in speed. On this machine - 31.6 GB of RAM beside a 96 GiB carve, and a 96 GB page file - Windows' commit is what runs out: the carve had room for 524288 cells (about 86 GiB allocated), the commit limit did not. Beyond about 1.5x the context, and for swapping long conversations in general, enlarge the page file first; it costs disk space only",
+ "open": {
+  "the draft's compute reserve": "sized with a dense mask over the whole pool, 1 GiB at 262144 cells, 2 at 524288, which the sparse path never uses; smaller only if no real graph can need it",
+  "gathering a conversation for the disk": "one host buffer the size of the state (5 GB at 173K tokens); in pieces it would cost far less commit, but the writer would then wait on the slot"
+ }
+}

@@ -183,6 +183,24 @@ is 1.3–1.7 GB and reads back in about 1.4 s; the next turn then processes its 
 not persisted. The slot save/restore endpoints are not a substitute: they carry the state but not
 the checkpoints, and without one a hybrid model re-processes the whole prompt.
 
+### Several long conversations at once
+
+With more than one slot the slots share one KV pool, and by default it is the context: 262144 tokens
+for all of them together, so a second long conversation pushes the first out to the disk tier and
+back (a 173K-token conversation reads back in ~3.5 s). `kv_pool` - *KV pool* under Advanced, shown with
+several slots - makes the pool larger while every conversation stays capped at the context: any size,
+one allocation, rounded up to 256 cells. Each token beyond the context costs this model about 39 KB of
+GPU memory and about 24 KB of Windows commit (RAM plus page file).
+
+On this machine commit is the limit, not the carve. With `kv_pool` 393216, conversations of 173K and
+155K tokens both stay resident and each answers its next question in under a second, but commit ran
+down to 0.04 GB and the disk tier could not get the 5 GB buffer it gathers such a conversation into;
+524288 failed with "bad allocation" although the carve had room for it (about 86 GiB allocated).
+Swapping two long conversations through the disk tier gets close to the limit on the default pool
+too. So for long conversations, enlarge the page file first - it costs disk space only. A loaded
+server with less than 8 GiB of commit left gets a warning on the page. Measured in
+`docs/results/kv-pool-20260924.json`.
+
 ### Shared GPU memory is decided per load, not by a switch
 
 A load first runs with `GGML_HIP_ENABLE_UNIFIED_MEMORY=0`, everything in the dedicated carve: that

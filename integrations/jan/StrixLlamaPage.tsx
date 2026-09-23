@@ -147,6 +147,7 @@ export default function StrixLlamaPage({ view }: { view: View }) {
     </div>
     {(error || pollError) && <div role="alert" className="mx-6 mt-4 rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-500">{error || describeError(pollError, tr)}</div>}
     {status?.failure && !status.identity && <div role="alert" className="mx-6 mt-4 rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-500">{tr('failure', { reason: status.failure_code ? tr(`errors.${status.failure_code}`) : status.failure })}</div>}
+    {status?.commit_low && <div role="alert" className="mx-6 mt-4 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-600 dark:text-amber-400">{tr('commitLow', { available: ((status.commit_available ?? 0) / 2 ** 30).toFixed(1), limit: ((status.commit_limit ?? 0) / 2 ** 30).toFixed(1) })}</div>}
     {notice && <div role="status" className="mx-6 mt-4 rounded-lg bg-emerald-500/10 p-3 text-sm text-emerald-600 dark:text-emerald-400">{notice}</div>}
     {view === 'models' && <div className="min-h-0 flex-1 overflow-auto p-6">
       <div className="mb-4 flex flex-wrap items-center gap-3"><div className="relative min-w-64 flex-1"><Search size={16} className="absolute left-3 top-2.5 text-muted-foreground" /><Input aria-label={tr('models.searchLabel')} className="pl-9" placeholder={tr('models.search')} value={query} onChange={e => setQuery(e.target.value)} /></div><select aria-label={tr('models.kindLabel')} className={selectClass} value={kind} onChange={e => setKind(e.target.value)}><option value="model">{tr('models.kindModel')}</option><option value="draft">{tr('models.kindDraft')}</option><option value="projection">{tr('models.kindProjection')}</option><option value="all">{tr('models.kindAll')}</option></select><Button variant="outline" onClick={() => setShowRoots(!showRoots)}>{tr('models.roots')}</Button><Button disabled={busy} variant="outline" onClick={() => act(async () => { await refreshCatalog(true) })}><RefreshCw size={15} />{tr('models.rescan')}</Button></div>
@@ -207,6 +208,7 @@ export default function StrixLlamaPage({ view }: { view: View }) {
             {numeric(tr('config.advanced.ubatch'), 'ubatch', tr('config.advanced.ubatchHelp'), 32, 32768)}
             {numeric(tr('config.advanced.threads'), 'threads', tr('config.advanced.threadsHelp'), 1, 32)}
             {numeric(tr('config.advanced.parallel'), 'parallel', tr('config.advanced.parallelHelp'), 1, 8)}
+            {(profile.parallel ?? 1) > 1 && numeric(tr('config.advanced.kvPool'), 'kv_pool', tr('config.advanced.kvPoolHelp'), 0, 1048576, 256)}
           </div>
           <div className="space-y-5">
             <div>
