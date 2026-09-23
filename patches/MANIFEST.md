@@ -355,3 +355,15 @@ patches. Two hunks: `build_conv_state_at` copies each rollback slot's conv-state
 the concat instead of through a cont (144 fewer dispatches in a 4-token verify pass), and the GDN conv
 fusion's matcher accepts that copy as a reader of the tail, so prefill keeps the fusion. Pure copies:
 the output is bitwise the same; a verify pass measured 59.40 -> 58.90 ms.
+
+## Addendum 2026-09-23: `apply_moe_glu3`
+
+No new files in the delta (34: 30 modified, 4 added); replay 34 / 34, 33 patches. Measured in
+`docs/results/moe-glu3-20260923.json`.
+
+| patch | files | what |
+|---|---|---|
+| `apply_moe_glu3` | `mmb.cu`, `test-backend-ops.cpp` | `mmb_tile_gemm_glu3`, the IQ3_S expert gate/up + SwiGLU: the dequantization spread over the block (four threads per row), the sign on an F16 copy of the grid so the scale product is one `v_fma_mix` (exact, so the same BF16), raw bytes kept whole until the dequantization, uniform-base addressing and native-vector prefetch registers, the valid-fragment dispatch out of the step loop, big tiles from 32 rows. 35.9 -> 19.9 ms a layer at 8192 tokens on a recorded routing; `STRIX_MMB_GLU3=0` runs the previous kernel, `STRIX_MMB_GLU_DUMP` records a routing. test-backend-ops: the `MOE_GLU` case (`STRIX_MOE_GLU_PERF`, also in test mode) and `STRIX_MOE_IDS_FILE`, which replays a recorded routing |
+
+Checked for identical output: 48 greedy tokens with their top-5 logprobs at every step, and the text
+generated after a 95.6K-token prefill. The prefill of that text went 889.7-892.9 -> 969.4 t/s.

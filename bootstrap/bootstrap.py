@@ -64,6 +64,7 @@ PATCH_ORDER = [
     "apply_disk_restore_lazy",      # after apply_disk_tier_v2: the restore path it changes is that one's
     "apply_ple_pregather",          # after apply_disk_restore_lazy: both edit the server loop
     "apply_state_copy_trim",        # after apply_ple_pregather: both edit qwen4exp.cpp
+    "apply_moe_glu3",
 ]
 
 # The ROCm SDK is installed as Python wheels, which is the only form AMD ships for Windows - the

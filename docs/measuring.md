@@ -76,6 +76,17 @@ HIP graphs replay node-by-node on the host, so removing nodes from a replayed gr
 Batching a per-query gather removed ~900 nodes from a 4-token graph and measured exactly neutral.
 Stop treating dispatch count as a cost once graphs are replaying; measure it.
 
+## An expert kernel needs the model's routing
+
+test-backend-ops draws expert ids uniformly, so at 8192 tokens every one of 512 experts gets ~160
+rows. The model's routing is nothing like that: the median expert gets 57-82 rows, 20-31% get 16 or
+fewer, 1.7-1.8% over 1024. Anything that decides by an expert's row count - tile widths, the big/small
+threshold - comes out differently on the two. Record the routing of a real prompt with
+`STRIX_MMB_GLU_DUMP=<file>` (one line per call, rows per expert; it synchronises, so only for recording)
+and replay it in the benchmark with `STRIX_MOE_IDS_FILE=<file>` and `STRIX_MOE_GLU_PERF=8192`. A kernel
+run also moves by up to 10% between runs on this machine: interleave the builds and take the minimum of
+several.
+
 ## Things that quietly invalidate a run
 
 - **A server that has served an image** decodes ~7% slower at long context for the rest of that

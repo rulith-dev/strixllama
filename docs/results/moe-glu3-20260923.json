@@ -1,0 +1,39 @@
+{
+ "question": "the routed expert GEMMs are the largest kernels of a prefill; how much faster can the IQ3_S gate/up + SwiGLU (MMB_GLU) get without changing a single output bit",
+ "setup": "gfx1151 at 140 W, ROCm 10.1.0a20260910, Qwen3.8-Flash-Next-UD-IQ4_XS (gate/up IQ3_S, down IQ4_NL; 512 experts, 10 used, n_embd 2560, n_ff 640), production profile (batch = ubatch 8192)",
+ "equivalence": {
+  "probe": "tmp/fusion_equiv_probe.py (18643-token real-text prompt, 48 greedy tokens, n_probs 5, MTP off) against the 0.1.8 record (round2): text and every top-5 logprob identical, at every step of this round and for the final build",
+  "long prompt": "the 16 tokens generated after the 95.6K-token real-text prefill are identical to 0.1.8's",
+  "test-backend-ops": "MOE_GLU at 8192 tokens against the CPU (NMSE), uniform and recorded routing: OK"
+ },
+ "kernel": {
+  "benchmark": "test-backend-ops perf, MOE_GLU at 8192 tokens (up, gate and swiglu_split as build_moe_ffn builds them, the path MMB_GLU fuses); STRIX_MOE_IDS_FILE replays the rows per expert of the 46 layers' first 8192-token ubatch of the 18.6K-token prompt, recorded with STRIX_MMB_GLU_DUMP; the minimum of three interleaved runs (a single run moves by up to 10% between runs)",
+  "recorded routing": "0.1.8 35.9 ms (15.0 TFLOPS) -> 19.9 ms (26.9 TFLOPS), 1.80x",
+  "uniform routing": "38.6 ms (13.9 TFLOPS) -> 20.9 ms (25.7 TFLOPS), 1.85x",
+  "full tiles": "320 experts x 256 rows, so every tile is full: 27.7 -> 16.9 ms",
+  "steps (recorded routing)": {
+   "dequantization spread over the block": "35.9 -> ~25.1 ms: four threads per row, 16 weights each, and the grid from an LDS copy - one thread per row left six of the eight waves waiting at the barrier",
+   "loads, addressing, dispatch": "-> 21.7 ms: raw bytes kept whole until the dequantization, a uniform base with 32-bit offsets, branch-free activation loads, native-vector prefetch registers, the valid-fragment dispatch out of the step loop",
+   "F16 grid": "-> 20.5 ms: the sign on the F16 grid value and the scale product in one v_fma_mix",
+   "threshold 32": "-> 19.9 ms: an expert of 32-127 rows as one big tile instead of 2-4 small ones"
+  }
+ },
+ "prefill": {
+  "18.6K real text": "tmp/fusion_equiv_probe.py, MTP off: 0.1.8 969 t/s -> 1080 t/s (1074-1097 over the intermediate builds of this round)",
+  "95.6K real text": "tools/decode_lab.py --config dectime --gen 16 --gen-prefix tmp/realtext.txt --gen-prefix-chars 340000: 0.1.8 107.0-107.4 s = 889.7-892.9 t/s -> 98.6 s = 969.4 t/s (+8.7%); the expert share is smaller at depth, where attention grows"
+ },
+ "findings": {
+  "wmma and valu": "microbenchmarks (tmp/wmma_peak.hip, wmma_valu.hip, wmma_lds.hip, wmma_bar.hip): register-only bf16 WMMA peaks at 52-54 TFLOPS (59.4 nominal at 2.9 GHz, so ~2.6 GHz under load); fed from LDS the way the MMB tiles do it (2x2 fragments, 72-halves rows) it keeps 50 TFLOPS. Every VALU instruction adds 1.05-1.15 cycles to a SIMD that is streaming WMMAs - they do not overlap, even from different waves - and two barriers a step cost another 7-14%. So a dequantizing GEMM on this GPU is priced in VALU instructions per WMMA.",
+  "routing is skewed": "at 8192 tokens the median expert gets 57-82 rows, 20-31% of the experts 16 or fewer (none included) and 1.7-1.8% over 1024; uniform ids give every expert ~160. With the kernel of the first step the experts under 128 rows held 13% of the rows in 44% of the tiles and took 26% of the time, each small tile dequantizing the same weights again.",
+  "what the kernel of the first step spent": "on the recorded routing, big tiles only: without the dequantization arithmetic 16-18% faster, weights all read from one cached row 3.5% faster, without the activation loads 10% faster, without the output stores unchanged",
+  "a load that waited": "the IQ3_S bytes were fetched into byte fields, and the compiler split them right after the loads - so each step waited (s_waitcnt vmcnt) for its weights before its first WMMA",
+  "a prefetch in scratch": "an array of HIP uint4 filled from a dereferenced pointer was not promoted to registers: 80 bytes of scratch, stored after every load and read back before the LDS store. The same array as a native ext_vector_type stays in registers (158 -> 190 VGPRs, no scratch).",
+  "scheduling": "with the step loop branch-free the scheduler hoisted all four 16-deep slices of fragment loads to the top of the step (~190 VGPRs of fragments) and spilled; a sched_barrier after each slice keeps one live, and beat both no barrier (+5% on the recorded routing) and one every other slice"
+ },
+ "tried_and_dropped": {
+  "wider tiles": "gate and up keep 2 x 64 x BN accumulators a block: BN 256 spills (113 VGPRs, 41.5 ms), BN 192 fits only at 4 waves per SIMD (27.1 vs 25.2 ms), BN 64 is slower (28.4)",
+  "prefetching two steps ahead": "for the small tiles the whole call 20.38 vs 20.27 ms; the big tile spills",
+  "wave-local syncs in the MMB epilogue": "its staging area is per wave, so two block barriers per fragment are more than it needs; bitwise the same and no measurable change (gate/up 20.9 vs 20.9 ms, down 12.7 vs 12.8)",
+  "the dispatch hoist in the IQ4_NL down projection": "removes the accumulator moves between the per-count paths of every step, 12.01 vs 12.01 ms; its tiles are ten steps deep, and its F32 output alone is ~11% of it (11.3 ms without the stores)"
+ }
+}

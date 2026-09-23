@@ -50,6 +50,17 @@ decode -7%, prefill -6%. The in-memory version costs +2.9 GB of commit, which at
 with `bad allocation`. Shipped inert, usable at ctx ≤ 131072, default off. The better design is a
 native Q6_K dequant path in the matrix-core kernel rather than twins.
 
+**Wider tiles for the IQ3_S expert gate/up.** The dequantization is paid per tile, so a wider token tile
+would amortize it over more WMMAs - but gate and up keep 2 x 64 x BN F32 accumulators a block. BN 256
+spills (41.5 ms against 25.2), BN 192 fits only at 4 waves per SIMD and is slower (27.1), BN 64 too
+(28.4). Prefetching two steps ahead did nothing for the small tiles and spills the big one.
+
+**Wave-local syncs in the MMB epilogue.** Each wave stages its fragments in its own 1 KB, so the two
+block barriers per fragment are more than the epilogue needs. Bitwise the same, and no measurable change
+(gate/up 20.9 vs 20.9 ms, down 12.7 vs 12.8). Neither did hoisting the valid-fragment dispatch out of the
+IQ4_NL down projection's step loop (12.01 vs 12.01 ms): its tiles are ten steps deep, and its F32 output
+write alone is ~11% of it.
+
 ## Configuration
 
 **A 64 GB carve.** Worse on both axes than 96 GB and now dead: the model does not fit, ~9.8 GB spills

@@ -9,7 +9,7 @@
   "common/speculative.cpp": "aab538d6c13facbf32bdac85fa338b50993a65de167cfeb7b61bde78088e44b3",
   "ggml/src/ggml-cuda/gdn-conv.cu": "eced61710a178ba5bc07985775e64711f82c9173cb57d05d3054c46ddaa759bb",
   "ggml/src/ggml-cuda/ggml-cuda.cu": "2c563fd8301d84136aafb8ffc386b5e40d7e16df84ebd5e7db60811312fdaccc",
-  "ggml/src/ggml-cuda/mmb.cu": "93e62856ec776917bf3251f10a8d4bbf22d31d10d46b8afd7ca24513aec67ae0",
+  "ggml/src/ggml-cuda/mmb.cu": "c90cb84bf8a886bca4a5a7ae3c4fdaec36717b030924cf7a94f4ce6cbaa61d65",
   "ggml/src/ggml-cuda/mmb.cuh": "1bff81ef7a2b088fa32c886462156bbcb7c33bb689a9fbf71d0a88c57314238e",
   "ggml/src/ggml-cuda/mmid.cu": "81a71f35f96d2cbd19afafb8de89884010e4eef1c986a20991f177355d3b3924",
   "ggml/src/ggml-cuda/mmq-load-tiles.cuh": "0a43a30415c57c7d14d5f1cb03789fbd12850fa00cee9f7fb841d952b84c1484",
@@ -36,7 +36,7 @@
   "src/llama-model.h": "934dfaf7862ed94699692cfe4d93f7a1fbd7b646d4577dbd0ba197ee2f953175",
   "src/models/block-graph.inc": "716077d2dd61f3d7edb94945eaf1cd4aa2bb86f452eff22832d9cf279d55ec07",
   "src/models/qwen4exp.cpp": "c684306f55334038a24d4251f98a6c35e1a2729180be5378d4cf8701a0312d9a",
-  "tests/test-backend-ops.cpp": "6c2a5e5e3ac7d840c6610ea7b70dca89de5d81e48ebcc56f239a6fe429e90e96",
+  "tests/test-backend-ops.cpp": "63b40d1aa142a62032da8bab47b53513b688fe8a18b6980ac07300f672c007c0",
   "tools/server/server-context.cpp": "c708fabb765062d096c386ca2b0ef51b5aab90a8b07837677dfca1ead611c1ec",
   "tools/server/server-task.cpp": "98db2e176c06588665460b36713f1e8b63de98c0526e0b57412a3bdf768fab71",
   "tools/server/server-task.h": "8772cab48cb3701cd3d1c7276876ef059d173875ecf29412330568fba1aef8e3"
