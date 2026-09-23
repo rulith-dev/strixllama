@@ -149,18 +149,30 @@ stalling the server: its state was read from the device one cell range at a time
 four-conversation session), now one run of ranges at a time. Details:
 `docs/results/multi-slot-20260923.json`.
 
-**One run of cells per conversation (2026-09-23).** The block list was only half of it: every graph still
+**One run of cells per conversation (2026-09-24).** The block list was only half of it: every graph still
 viewed the pool from cell 0, and the MTP draft attends densely, so with MTP a conversation beside idle ones
-drafted over all of them (26.0 tok/s against 29.8 alone, and different drafts). Now each conversation keeps
-one run of cells - appended after its last cell, a new one placed in the middle of the largest free run, one
-that runs out of room moved whole to a larger run (device copies, ~20 ms per 23K cells a cache) - and a
-batch's graph views only its own run. Beside idle conversations one conversation decodes at 44.5 ms/token
-(one slot 44.3) and 29.7 tok/s with MTP (one slot 29.8), and computes bitwise what it computes alone: every
-token and top-3 probability, the draft's acceptance too, also after it has been moved. The same round found
-the "bad allocation" seen once in ~16 multi-slot runs: ggml-alloc reallocated the 3.4 GB compute buffer when
-a graph needed a few MB more, ROCm on Windows keeps the freed buffer's commit, and the server ran into the
-machine's 127.6 GB commit limit. Compute buffers now get a little headroom and are never reallocated: four
-conversations peak at 83.7 GB instead of 90.5. Details: `docs/results/kv-regions-20260923.json`.
+drafted over all of them: 32.8 tok/s against 37.4 alone, and different drafts. Now each conversation keeps one
+run of cells, packed in slot order with room after each, and a batch's graph views only its own run. When a
+batch does not fit, the pool is laid out again first: the conversations keep their order and slide, each one
+of the batch gets the same room after it and idle ones none (device copies on the graphs' own stream: three
+idle conversations of 70K cells in 16 pieces, ~40 ms of host work). Beside 70K tokens of idle conversations
+one conversation decodes at 44.1 ms/token (one slot 43.5) and 38.5 tok/s with MTP (one slot 37.8), and
+computes bitwise what it computes alone - every token and top-3 probability, the draft's acceptance too -
+also across forced re-layouts and a prompt extension that set one off. Four conversations generating
+together: 47.4 tok/s against 40.7. The same round found the "bad allocation" seen once in ~16 multi-slot
+runs: ggml-alloc reallocated the 3.4 GB compute buffer when a graph needed a few MB more, ROCm on Windows
+keeps the freed buffer's commit, and the server ran into the machine's 127.6 GB commit limit. Compute
+buffers now get a little headroom and are never reallocated: the four conversations peak at 83.7 GB with
+6.9 GB of commit to spare, where 0.1.10 got to within 0.18 GB. Details:
+`docs/results/kv-regions-20260923.json`.
+
+**The build layout ran on the display driver's HIP runtime (found 2026-09-24).** A build run from
+`bin/hip-rocm101` or the build directory had no ROCm DLLs beside it, and Windows searches System32 before
+PATH, so it loaded the driver's `amdhip64_7.dll` instead of the SDK's that the bundle ships. Same binaries,
+same prompt: 29.5 tok/s with MTP there against 37.8 in the bundle (acceptance 0.48 against 0.71), and
+different text from the ninth token. Measurements made through the manager before this date ran on the
+driver's runtime; comparisons inside a round hold, absolute MTP figures are low. `bootstrap.py --build`
+now puts the SDK's copies beside the build, and the two layouts agree bitwise. See `docs/measuring.md`.
 
 ## Correctness
 

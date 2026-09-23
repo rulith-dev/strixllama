@@ -569,8 +569,10 @@ def validate_profile(raw, model):
 
 def bundled_rocm():
     """The installed layout: the ROCm DLLs sit beside llama-server (tools/make_runtime_bundle.py),
-    so Windows finds them without a PATH entry and there is no SDK directory at all."""
-    return (RUNTIME.parent / 'amdhip64_7.dll').is_file()
+    so Windows finds them without a PATH entry and there is no SDK directory at all. A build tree
+    carries only the HIP runtime DLLs that System32 would otherwise shadow (bootstrap.py --build) and
+    takes the rest of the SDK through PATH, so the test is a library only the bundle carries."""
+    return (RUNTIME.parent / 'hipblas.dll').is_file()
 
 
 def runtime_available():

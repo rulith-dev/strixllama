@@ -243,7 +243,30 @@ def build():
         if os.path.isfile(src):
             shutil.copyfile(src, os.path.join(BIN, f))
             got += 1
-    print("build: %d runtime files in %s" % (got, BIN))
+    hip = shadowed_hip_dlls(os.path.join(rocm, "bin"), os.path.join(BUILD, "bin", "ggml-hip.dll"))
+    for p in hip:
+        for d in (os.path.join(BUILD, "bin"), BIN):
+            shutil.copyfile(str(p), os.path.join(d, p.name))
+    print("build: %d runtime files in %s; beside them the SDK's %s" % (
+        got, BIN, ", ".join(p.name for p in hip) if hip else "(nothing in System32 to shadow it)"))
+
+
+def shadowed_hip_dlls(rocm_bin, ggml_hip):
+    """The SDK DLLs that ggml-hip loads and System32 also carries.
+
+    Windows looks in System32 before PATH, and the display driver installs its own amdhip64_7.dll and
+    amd_comgr.dll there, so a build that reached the SDK through PATH ran on the driver's HIP runtime
+    rather than the SDK's that the bundle ships - with different numerics, and MTP acceptance 0.48
+    against 0.71 on the same prompt (docs/measuring.md). Copies beside the binaries are found first;
+    the rest of the SDK still comes through PATH, which tools/manager.py sets for a build tree.
+    """
+    from pathlib import Path
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    from make_runtime_bundle import closure
+    rocm = {p.name.lower(): p for p in Path(rocm_bin).iterdir() if p.suffix.lower() == ".dll"}
+    system32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+    found = closure(["ggml-hip.dll"], dict(rocm, **{"ggml-hip.dll": Path(ggml_hip)}))
+    return [p for n, p in sorted(found.items()) if n in rocm and (system32 / p.name).is_file()]
 
 
 def toolchain():

@@ -251,10 +251,17 @@ class ManagerTests(unittest.TestCase):
         # tools/make_runtime_bundle.py puts the ROCm DLLs beside llama-server
         with patch.object(m,'ROCM_BIN',self.root/'nowhere'):
             self.assertFalse(m.runtime_available())
-            (m.RUNTIME.parent/'amdhip64_7.dll').write_bytes(b'')
+            for name in ('amdhip64_7.dll','hipblas.dll'):(m.RUNTIME.parent/name).write_bytes(b'')
             self.assertTrue(m.runtime_available())
             env=m.runtime_environment(m.validate_profile({'mtp':False},self.model))
             self.assertNotIn('nowhere',env['PATH'])
+    def test_build_tree_with_the_hip_runtime_beside_it_still_takes_the_sdk_through_path(self):
+        # bootstrap.py --build copies only the DLLs System32 would shadow; hipBLAS and the rest are the SDK's
+        (m.RUNTIME.parent/'amdhip64_7.dll').write_bytes(b'')
+        self.assertFalse(m.bundled_rocm())
+        self.assertTrue(m.runtime_available())
+        env=m.runtime_environment(m.validate_profile({'mtp':False},self.model))
+        self.assertTrue(env['PATH'].startswith(str(m.ROCM_BIN)))
     def test_draft_falls_back_to_the_family_s_shared_head_beside_the_model(self):
         # an installed copy has no models/ of ours; Unsloth's mtp-*.gguf sits next to the model
         shared=self.file.with_name('mtp-'+m.MODEL_FAMILY+'-shared-Q4_K_M.gguf');gguf(shared)

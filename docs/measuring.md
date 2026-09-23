@@ -129,6 +129,31 @@ Under `--load-mode none --lazy-mode on-direct`, weights page in on demand, so th
 much context has been processed — 60 GB after a 2.3K prefill, 83 GB after 85K, same model. Only
 compare it between runs of an identical workload.
 
+## Which HIP runtime a build loads
+
+Windows looks for a DLL in the executable's directory, then System32, and only then PATH. The display driver
+installs its own `amdhip64_7.dll` and `amd_comgr` in System32, so a build with no ROCm DLLs beside it - the
+build directory, and `bin/hip-rocm101` before 2026-09-24 - ran on the driver's HIP runtime, whatever PATH
+said, while hipBLAS, rocBLAS and hipBLASLt (not in System32) came from the SDK. The bundle carries the SDK's
+runtime beside the server. Same binaries, same prompt, the two layouts:
+
+| | build layout (driver runtime) | bundle (SDK runtime) |
+|---|---|---|
+| 23K conversation, MTP | 29.50 tok/s, acceptance 147 / 304 | 37.77 tok/s, 170 / 240 |
+| 23K conversation, no MTP | 44.78 ms/token | 43.47 ms/token |
+| 18.6K prompt, the first token's top logprob, ubatch 8192 | -0.035 | -0.049 |
+| the same at ubatch 4096 | -0.047 | -0.520 |
+
+Every earlier comparison had both sides in the build layout, so they agreed with each other. It surfaced as
+a "regression" of a build against the released 0.1.10 bundle, and swapping the build's binaries into a copy
+of that bundle made it disappear. `bootstrap.py --build` now puts the SDK's copies of the DLLs System32
+would shadow beside the build, and the two layouts agree bitwise. When in doubt, ask a running server what
+it loaded:
+
+```powershell
+(Get-Process llama-server).Modules | Where-Object ModuleName -match 'amdhip|comgr' | Select-Object FileName
+```
+
 ## "bad allocation" was the commit limit
 
 The server turns `std::bad_alloc` into "decode() failed: bad allocation", and it came and went: once in

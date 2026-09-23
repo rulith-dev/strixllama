@@ -73,8 +73,15 @@ draft viewed the whole pool for the rest of the generation (+5 ms a pass). It is
 
 **Moving conversations through `memory_update`.** Returning FAILED_PREPARE so that `llama_context::decode`
 runs `memory_update(true)` and retries is the upstream route for cache maintenance, and it worked, but it
-re-reserves the worst-case graph every time: 353 ms for the target. The moves run in `init_batch` after a
-scheduler sync instead.
+re-reserves the worst-case graph every time: 353 ms for the target. The moves are queued in `init_batch` on
+the stream the graphs run on instead.
+
+**Starting a new conversation in the middle of the largest free run.** The first layout of the regions round
+gave every conversation room to grow that way, and moved one that ran out of room to a run twice its size.
+It spread four conversations over the whole pool, and a step of several conversations views the span from the
+first of them to the last: the mixed steps' host inputs took 0.5-0.7 ms more, and the MTP draft's dense
+attention read the gaps. Conversations are now packed in order with a fixed room after each - four of ~24K
+tokens sit in ~121K cells - and a batch that does not fit has the pool laid out again.
 
 ## Configuration
 
