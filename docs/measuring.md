@@ -87,6 +87,13 @@ and replay it in the benchmark with `STRIX_MOE_IDS_FILE=<file>` and `STRIX_MOE_G
 run also moves by up to 10% between runs on this machine: interleave the builds and take the minimum of
 several.
 
+## A mixed step's probabilities are not reproducible
+
+When several conversations decode at once, which requests land in which batch depends on timing, and the
+batch shape changes the numerics. The top-5 probabilities of the same token in a two- or four-conversation
+step moved between two runs of one build (0.1-0.3 nats on the minor candidates). Compare greedy tokens
+there; compare probabilities only with one conversation decoding.
+
 ## Things that quietly invalidate a run
 
 - **A server that has served an image** decodes ~7% slower at long context for the rest of that

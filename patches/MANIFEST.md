@@ -367,3 +367,13 @@ No new files in the delta (34: 30 modified, 4 added); replay 34 / 34, 33 patches
 
 Checked for identical output: 48 greedy tokens with their top-5 logprobs at every step, and the text
 generated after a 95.6K-token prefill. The prefill of that text went 889.7-892.9 -> 969.4 t/s.
+
+## Addendum 2026-09-23: two patches for several slots
+
+`src/prefix.h` joins the delta (35 files: 31 modified, 4 added); replay 35 / 35, 35 patches. Measured in
+`docs/results/multi-slot-20260923.json`.
+
+| patch | files | what |
+|---|---|---|
+| `apply_qsa_active_blocks` | `llama-memory-hybrid-idx.cpp`, `.h`, `qwen4exp.cpp`, `prefix.h` | with several slots the cache is one pool, and the sparse-attention block list of a batch held every conversation's blocks, the idle ones only to be marked invisible. It now holds the batch's own sequences (`qsa_active_blocks`), sized from their positions: one conversation beside 70K tokens of idle ones 47.6 -> 44.8 ms/token (one slot: 44.1), a prefill beside them 999 -> 1064 t/s. Bitwise the same for a conversation with at least the selection budget of blocks; a shorter one can move in the last bits. `LLAMA_QSA_ACTIVE_BLOCKS=0` turns it off |
+| `apply_state_read_coalesce` | `llama-context.cpp` | a slot's state is read from the device one run of nearby cell ranges at a time instead of one range at a time: saving a conversation decoded alongside others took 6-10 s with the whole server waiting; 347 -> 44 ms in the probe, the same bytes |

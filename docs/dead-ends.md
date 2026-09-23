@@ -61,6 +61,10 @@ block barriers per fragment are more than the epilogue needs. Bitwise the same, 
 IQ4_NL down projection's step loop (12.01 vs 12.01 ms): its tiles are ten steps deep, and its F32 output
 write alone is ~11% of it.
 
+**Sparse attention in the MTP draft beside idle conversations.** The draft attends densely over the
+whole pool, idle conversations included, so the sparse path looked like a way out: `LLAMA_MTP_QSA_MIN_T=1`
+gave 85.5 ms a pass against 85.1 dense (one slot: 82.6 against 81.0).
+
 ## Configuration
 
 **A 64 GB carve.** Worse on both axes than 96 GB and now dead: the model does not fit, ~9.8 GB spills

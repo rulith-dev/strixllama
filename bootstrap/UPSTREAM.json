@@ -25,17 +25,18 @@
   "ggml/src/ggml-cuda/strixllama-getrows-cast.cuh": "ed9f51c30db922f743196cca350a1554067fd0fa021f404910ea6bea91d753dc",
   "ggml/src/ggml-cuda/vecdotq.cuh": "3b879a937d5143902db4cae2530529c32fd464dbfb822a7fe31875aba57707ce",
   "include/llama.h": "c0a99abe8091b8aa2eb5493bfcedc41cd4c5f9cf48193de1c11cfe799427b722",
-  "src/llama-context.cpp": "b181071d05d5188560bfe4b77d50efdc7d0423f97e707b6953d32dfa03cdc8e3",
+  "src/llama-context.cpp": "dc5eff3638513258dc857ceacc9e250013a455c9687d9bd872e7664a95462a85",
   "src/llama-graph.cpp": "3a360aedfd5100961bc317471f56e5a45770f29b0c4d49fbca3bd112136e1d86",
   "src/llama-lazy-reader.h": "4378a2edb78f1c840526e67b7d36d585f71e49cef48502bb618804c0216f417f",
-  "src/llama-memory-hybrid-idx.cpp": "fbf336be84ee5495a24c176d9055f136f36b5414749fe10b120de0257a03a479",
-  "src/llama-memory-hybrid-idx.h": "505973de6ae49812bec468d12b0765daaf2d8d69ad2cfabec427991ce03a6dc9",
+  "src/llama-memory-hybrid-idx.cpp": "f692bf14109cc44993e37f56cdd6239cc5ab7bd1ad5ebf7aea0b692f40e3c7b1",
+  "src/llama-memory-hybrid-idx.h": "645622ce5d1eabdbad23746da7fa3bb2b2be3f82a98eac4b4faa8a17c23cdb8c",
   "src/llama-memory-recurrent.cpp": "201b89af2e54b20800090392ba111e7ae29c2d991976040ba6f302e324f1f869",
   "src/llama-memory-recurrent.h": "f25504b3f27150834f9f74fc48b274e4b1dae3a9ebff7a557ad0a2486d93c369",
   "src/llama-model.cpp": "ee9b24fcd6227fea4e27dc5322fac0a08254d0483b1b0165767eabbabc9322dc",
   "src/llama-model.h": "934dfaf7862ed94699692cfe4d93f7a1fbd7b646d4577dbd0ba197ee2f953175",
   "src/models/block-graph.inc": "716077d2dd61f3d7edb94945eaf1cd4aa2bb86f452eff22832d9cf279d55ec07",
-  "src/models/qwen4exp.cpp": "c684306f55334038a24d4251f98a6c35e1a2729180be5378d4cf8701a0312d9a",
+  "src/models/qwen4exp.cpp": "a0c586d7d881c0e2e4c5520f2e1a9cabd5eb51f271c3d5b8c1fd9b29693ab46a",
+  "src/prefix.h": "a0dd5c5db8a51e7de53b65f28200cf7ba0ca7ac9b1989d80aa8b3c39b8f0136f",
   "tests/test-backend-ops.cpp": "63b40d1aa142a62032da8bab47b53513b688fe8a18b6980ac07300f672c007c0",
   "tools/server/server-context.cpp": "c708fabb765062d096c386ca2b0ef51b5aab90a8b07837677dfca1ead611c1ec",
   "tools/server/server-task.cpp": "98db2e176c06588665460b36713f1e8b63de98c0526e0b57412a3bdf768fab71",
@@ -147,6 +148,10 @@
   "src/models/qwen4exp.cpp": {
    "git_blob": "eb7fb4df6eb46728a60a345e45b693552357000c",
    "sha256": "7497a7e220ae65d4fbfaa0e7c302025da51c283e24600cb1c2ec60898cf82333"
+  },
+  "src/prefix.h": {
+   "git_blob": "3ca0d1c43985a6c232cc7c9b8b0e8f7dbfc49779",
+   "sha256": "ad53ec60d7bc5088cca14e1875113aab770bbced0772e45217081a1d06b04934"
   },
   "tests/test-backend-ops.cpp": {
    "git_blob": "a1ca8d4a3b6b093f6555c1c85e47d0133806db70",

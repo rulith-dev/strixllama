@@ -1,0 +1,34 @@
+{
+ "question": "with several slots, does one running conversation cost what it costs on a single slot, and why did the server stall for 6-10 s when it saved a conversation",
+ "setup": "0.1.9 build against the build of this round, production profile with parallel 1 or 4, MTP off unless stated, no disk tier unless stated; tmp/pool_probe.py puts 50163 + 18939 + 1285 tokens of idle conversations in slots 1-3, then decodes 256 greedy tokens on a 23052-token conversation in slot 0",
+ "what_was_wrong": {
+  "the pool": "with more than one slot the cache is unified: every conversation sits in one pool of cells and each graph spans the pool (n_kv = the highest used cell). The sparse-attention block list of a batch held every conversation's blocks: their keys were gathered (12 x GET_ROWS [128, 23424] against [128, 5888] on one slot, 1.4 ms), scored and enumerated on the host (inputs 1.98 against 1.14 ms a step), only to be marked invisible",
+  "the stall": "saving a slot's state read it from the device one cell range at a time. A conversation decoded alongside others is interleaved with them cell by cell, so it is thousands of ranges per layer; the user's log had gathers of 6255-10315 ms, during which the other conversations produced one token in 9 s"
+ },
+ "decode": {
+  "MTP off": "0.1.9 47.6 ms/token (21.0 tok/s) -> 44.8-45.3 (22.1-22.3); one slot alone 44.1 (43.0 on 0.1.9); host inputs 1.98 -> 1.31 ms a step (one slot 1.14)",
+  "MTP on": "per speculative pass 88.9 -> 85.1 ms (one slot 81.0), 23.4 -> 25.5 tok/s at the same ~43% acceptance",
+  "output": "the 256 tokens and every top-3 probability identical to 0.1.9, with and without idle conversations resident; the 18.6K equivalence probe on one slot identical to 0.1.8"
+ },
+ "prefill": {
+  "beside idle conversations": "an 18939-token prefill beside a 50K one: 999 -> 1064-1069 t/s; four 43K conversations prefilled one after the other: 913 / 837 / 763 / 704 -> 903 / 893 / 835 / 877 t/s (the score bounds now apply beside other conversations too)"
+ },
+ "short_conversations": {
+  "what changes": "a conversation with fewer visible blocks than the selection budget (512 blocks, ~2K tokens) fills the budget with invisible entries; they now sit after its own blocks instead of among them, so its attention can differ in the last bits",
+  "measured": "a 1527-token conversation beside the idle ones, first generated token: 0.1.9 ('``' -0.620, '</' -0.896), this round ('</' -0.716, '``' -0.767), the same conversation alone on one slot ('</' -0.680, '``' -0.806); LLAMA_QSA_ACTIVE_BLOCKS=0 reproduces 0.1.9 exactly. The new numbers no longer depend on which other conversations happen to be in the pool."
+ },
+ "mixed_steps": "several conversations decoding at once (tmp/mstream_agree_probe.py, 4 x 43K): every greedy token identical; the probabilities of a mixed step moved, but they move between two runs of the same build too - which requests land in which batch changes from run to run",
+ "state_save": {
+  "probe": "tmp/gather_probe.py: four conversations, 200 tokens each generated at once, then slot 0 reused",
+  "gather": "337-347 -> 44 ms for 18822 tokens; saves of unshared (prefill-only) conversations unchanged at 24-41 ms",
+  "bytes": "the two builds' disk-tier stores after the same run: 754 files, every one hashed identical"
+ },
+ "checks": "vision_stress STRESS OK on one slot; replay 35 / 35 (src/prefix.h joins the delta), 35 patches",
+ "tried_and_dropped": {
+  "sparse attention in the MTP draft beside idle conversations": "LLAMA_MTP_QSA_MIN_T=1: 85.5 ms a pass against 85.1 dense (one slot: 82.6 against 81.0)"
+ },
+ "open": {
+  "MTP beside idle conversations": "still ~4 ms a pass over one slot: ~1.7 ms of host scans that walk the pool (block grouping, the draft's dense mask), ~2 ms of GPU (the draft's dense attention and mask span the pool)",
+  "an exception": "once in ~16 MTP decodes beside idle conversations the server returned 'bad allocation' from the per-slot drafting step (checkpoint state copies); not reproduced in 6 + 6 repeated decodes on either build"
+ }
+}

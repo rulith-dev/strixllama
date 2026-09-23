@@ -140,6 +140,15 @@ probability is unchanged. The IQ4_NL down projection is a different animal: with
 takes 74% of its time - ten steps per tile, weights streamed in and 839 MB of F32 expert outputs a
 layer written out for the weighted sum. Details: `docs/results/moe-glu3-20260923.json`.
 
+**Several slots (2026-09-23).** With more than one slot the cache is one pool, and each step's
+sparse-attention bookkeeping used to span all of it: one conversation beside 70K tokens of idle ones
+decoded at 47.6 ms/token against 43-44 alone. The block list now covers only the conversations in the
+batch: 44.8 ms/token, 25.5 tok/s with MTP (23.4 before; one slot 29), bitwise the same tokens, and an
+18.9K prefill beside them 999 -> 1064 t/s. Saving a conversation that was decoded alongside others also stops
+stalling the server: its state was read from the device one cell range at a time (6-10 s in a real
+four-conversation session), now one run of ranges at a time. Details:
+`docs/results/multi-slot-20260923.json`.
+
 ## Correctness
 
 Two bugs that produced wrong output rather than slow output, both found late because the standard
