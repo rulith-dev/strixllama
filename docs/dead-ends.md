@@ -70,6 +70,13 @@ memory registered with the GPU, the path the IOMMU translates. Here the weights 
 in the carve: with the model loaded and 33.6K tokens prefilled, the server's WDDM counters read 84.56 GB
 dedicated and 1.62 GB shared (staging and pinned buffers).
 
+**Windows power mode "Best performance", and Memory Integrity (HVCI) off.** Neither shows. With both
+changed and the machine rebooted, the same 0.1.8 build: a speculative pass at short context
+72.20 / 72.50 / 71.75 ms (median of 68 passes each, three runs) against 72.05 before; a 95.6K-token
+real-text prefill 892.9 / 889.7 t/s against 888.3-891.9. The host work these would speed up is either
+overlapped with the GPU (prefill) or a few percent of a pass that the kernel calls do not dominate
+(decode). Memory Integrity is a security feature, so it is worth keeping on.
+
 **`QSA3_FORCE=1`** is a null test, not a shortcut. It lifts the kernel's `< 128 queries` gate, but the
 packed K/V operands it needs are only built under the prefill layout, so the predicate declines
 anyway. Perplexity, equivalence and speed all came back identical. Feeding that kernel at decode
