@@ -377,3 +377,15 @@ generated after a 95.6K-token prefill. The prefill of that text went 889.7-892.9
 |---|---|---|
 | `apply_qsa_active_blocks` | `llama-memory-hybrid-idx.cpp`, `.h`, `qwen4exp.cpp`, `prefix.h` | with several slots the cache is one pool, and the sparse-attention block list of a batch held every conversation's blocks, the idle ones only to be marked invisible. It now holds the batch's own sequences (`qsa_active_blocks`), sized from their positions: one conversation beside 70K tokens of idle ones 47.6 -> 44.8 ms/token (one slot: 44.1), a prefill beside them 999 -> 1064 t/s. Bitwise the same for a conversation with at least the selection budget of blocks; a shorter one can move in the last bits. `LLAMA_QSA_ACTIVE_BLOCKS=0` turns it off |
 | `apply_state_read_coalesce` | `llama-context.cpp` | a slot's state is read from the device one run of nearby cell ranges at a time instead of one range at a time: saving a conversation decoded alongside others took 6-10 s with the whole server waiting; 347 -> 44 ms in the probe, the same bytes |
+
+## Addendum 2026-09-23: one run of cells per conversation
+
+`src/llama-kv-cells.h`, `src/llama-kv-cache.cpp`, `src/llama-kv-cache.h`, `src/llama-graph.h` and
+`ggml/src/ggml-alloc.c` join the delta (40 files: 36 modified, 4 added); replay 40 / 40, 38 patches.
+Measured in `docs/results/kv-regions-20260923.json`.
+
+| patch | files | what |
+|---|---|---|
+| `apply_kv_regions` | `llama-kv-cells.h`, `llama-kv-cache.cpp`, `.h`, `llama-graph.cpp`, `.h`, `llama-memory-hybrid-idx.cpp`, `.h`, `qwen4exp.cpp`, `prefix.h` | with several slots every conversation keeps one run of the pool: its tokens go after its last cell, a new one starts in the middle of the largest free run, one without room moves to a larger run first (device copies of K/V, indexer keys and block keys, in `init_batch`). A batch's graph views only the run of its own conversations. One conversation beside idle ones computes bitwise what it computes on one slot, MTP included, at the same speed (MTP 26.0 -> 29.7 tok/s); block keys go stale per sequence. `LLAMA_KV_REGIONS=0` / `LLAMA_KV_WINDOW=0` turn it off |
+| `apply_compute_buffer_headroom` | `ggml-alloc.c` | compute buffers get 3% + 16 MiB of headroom: a graph a few MiB larger no longer frees and reallocates the 3.4 GiB target buffer, whose commit ROCm on Windows keeps - the intermittent "bad allocation". Four conversations: peak commit 90.5 -> 83.7 GB. `GGML_ALLOC_COMPUTE_PAD=0` turns it off, `GGML_ALLOC_DEBUG=1` reports reallocations |
+| `apply_alloc_failure_report` | `server-context.cpp` | a failing `operator new` prints its size and call stack before the server reports "bad allocation" |

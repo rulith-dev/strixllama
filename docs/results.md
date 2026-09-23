@@ -149,6 +149,19 @@ stalling the server: its state was read from the device one cell range at a time
 four-conversation session), now one run of ranges at a time. Details:
 `docs/results/multi-slot-20260923.json`.
 
+**One run of cells per conversation (2026-09-23).** The block list was only half of it: every graph still
+viewed the pool from cell 0, and the MTP draft attends densely, so with MTP a conversation beside idle ones
+drafted over all of them (26.0 tok/s against 29.8 alone, and different drafts). Now each conversation keeps
+one run of cells - appended after its last cell, a new one placed in the middle of the largest free run, one
+that runs out of room moved whole to a larger run (device copies, ~20 ms per 23K cells a cache) - and a
+batch's graph views only its own run. Beside idle conversations one conversation decodes at 44.5 ms/token
+(one slot 44.3) and 29.7 tok/s with MTP (one slot 29.8), and computes bitwise what it computes alone: every
+token and top-3 probability, the draft's acceptance too, also after it has been moved. The same round found
+the "bad allocation" seen once in ~16 multi-slot runs: ggml-alloc reallocated the 3.4 GB compute buffer when
+a graph needed a few MB more, ROCm on Windows keeps the freed buffer's commit, and the server ran into the
+machine's 127.6 GB commit limit. Compute buffers now get a little headroom and are never reallocated: four
+conversations peak at 83.7 GB instead of 90.5. Details: `docs/results/kv-regions-20260923.json`.
+
 ## Correctness
 
 Two bugs that produced wrong output rather than slow output, both found late because the standard

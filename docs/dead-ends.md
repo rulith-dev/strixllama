@@ -65,6 +65,17 @@ write alone is ~11% of it.
 whole pool, idle conversations included, so the sparse path looked like a way out: `LLAMA_MTP_QSA_MIN_T=1`
 gave 85.5 ms a pass against 85.1 dense (one slot: 82.6 against 81.0).
 
+**Rebuilding the block keys after a conversation moves.** Correct, but a batched rebuild does not round like
+the keys built as blocks complete: the moved conversation's second token went from -0.154 to -0.231. The
+keys now move with their cells. Tracking "rebuild every key" as one flag for the pool was worse still: it
+had to widen the window to the pool, and only a graph of 128+ tokens clears it, so after any restore the MTP
+draft viewed the whole pool for the rest of the generation (+5 ms a pass). It is per sequence now.
+
+**Moving conversations through `memory_update`.** Returning FAILED_PREPARE so that `llama_context::decode`
+runs `memory_update(true)` and retries is the upstream route for cache maintenance, and it worked, but it
+re-reserves the worst-case graph every time: 353 ms for the target. The moves run in `init_batch` after a
+scheduler sync instead.
+
 ## Configuration
 
 **A 64 GB carve.** Worse on both axes than 96 GB and now dead: the model does not fit, ~9.8 GB spills

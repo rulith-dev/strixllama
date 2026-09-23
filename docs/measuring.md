@@ -129,6 +129,21 @@ Under `--load-mode none --lazy-mode on-direct`, weights page in on demand, so th
 much context has been processed — 60 GB after a 2.3K prefill, 83 GB after 85K, same model. Only
 compare it between runs of an identical workload.
 
+## "bad allocation" was the commit limit
+
+The server turns `std::bad_alloc` into "decode() failed: bad allocation", and it came and went: once in
+~16 multi-slot runs, then every time once a change made the server use a little more memory. A new handler
+that prints the requested size settled it at once: 3-9 MB requests were failing, so the machine was out of
+commit, not computing a garbage size. The commit limit is RAM plus page file, 31.6 + 96 = 127.6 GB, and on
+this machine device allocations of ~3.5 GB and up count against it one for one. Two things follow:
+
+- Watch commit, not RAM: `GlobalMemoryStatusEx` (`ullAvailPageFile`) and the server's `PrivateUsage`,
+  sampled per phase of a run (load, each prefill, the decode). Working set and "Dedicated Usage" say nothing.
+- Freeing does not give it back. ROCm on Windows keeps a freed buffer's commit, and a request a few MB
+  larger never reuses it - a `hipMalloc`/`hipFree` loop through ctypes shows it in a minute. ggml-alloc
+  reallocated the 3.4 GB compute buffer whenever a graph needed a few MB more, so each of those cost 3.4 GB
+  for the rest of the process (`GGML_ALLOC_DEBUG=1` prints every reallocation).
+
 ## When a process dies with no message
 
 Read the Windows Application Error event log immediately: it gives the faulting module and offset.

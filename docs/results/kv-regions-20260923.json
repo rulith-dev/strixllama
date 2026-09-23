@@ -1,0 +1,39 @@
+{
+ "question": "with several slots, can one running conversation cost and compute exactly what it does on a single slot - MTP included - if every conversation keeps its own run of the KV pool; and what was the intermittent \"bad allocation\"",
+ "setup": "production profile, 4 slots over one 262144-cell pool, the 0.1.10 runtime against the build of this round in one session; tmp/pool_probe.py puts 50163 + 18939 + 1285 tokens of idle conversations in slots 1-3, then decodes 256 greedy tokens on a 23052-token conversation in slot 0",
+ "design": {
+  "regions": "a conversation's tokens go after its last cell; a conversation with no cell starts in the middle of the largest free run (at its start if nothing precedes it), so the one before it can grow too; one whose next tokens do not fit moves, all of it in position order, to a run with room for twice what it will hold (at most 32K cells more). Anything that does not fit takes the old search, which is correct and only widens the window",
+  "window": "the graph of a batch views [first cell, last cell] of its own conversations, padded as before, instead of the pool from cell 0; every cell index in the mask and the sparse-attention inputs is relative to it, the block-key rows stay absolute; a graph is reused only for the same first cell",
+  "moves": "device-to-device copies of the K/V rows of every layer, the indexer keys and the block keys, applied in init_batch after synchronizing the context's scheduler: 23052 cells in 15-27 ms per cache",
+  "block keys": "go stale per sequence (restore, shift, a move that reorders cells) instead of per pool; the next graph of that sequence rebuilds its own keys inside its window"
+ },
+ "decode": {
+  "MTP off": "one slot 44.34 ms/token; four slots with the idle conversations 44.53 (0.1.10: 44.98)",
+  "MTP on": "one slot 29.77 tok/s (78.9 ms per speculative pass); four slots 29.69 (79.1); 0.1.10 26.02 (83.4). Acceptance 147 = 147 (0.1.10: 138 - its draft attended over the pool and drafted differently)",
+  "output": "four slots against one: all 256 tokens and every top-3 probability identical, MTP off and on; the 18.6K single-slot equivalence probe identical to 0.1.8"
+ },
+ "moves_measured": {
+  "forced": "LLAMA_KV_REGION_PACK=1 (a test knob: conversations back to back) makes the active conversation move on its first decoded token: 23052 cells moved, target K/V 21 ms, its indexer 17 ms, the draft 15 + 15 ms; the 256 tokens and probabilities identical to one slot, MTP off and on (acceptance 151 = 151)",
+  "mid-prefill": "a 10301-token prompt extension that does not fit after the conversation: moved before its first ubatch; identical to one slot (acceptance 92 = 92)",
+  "no room": "a 32768-cell pool with no run large enough: the tokens took the search; identical to one slot",
+  "restore": "a conversation saved out of slot 0 and restored into slot 1 (a new place in the pool) answers with the same tokens and the same probabilities as 0.1.10 does"
+ },
+ "concurrency": {
+  "four at once": "four ~24K conversations generating 128 tokens together with MTP: 40.4 tok/s aggregate (0.1.10: 38.4 in the same session); the mixed steps' host inputs take 0.5-0.7 ms more, because their window spans the free runs between the conversations",
+  "agreement": "tmp/mstream_agree_probe.py: tokens alone vs together agree as on 0.1.10, whose runs also show the occasional 23 of 24"
+ },
+ "memory": {
+  "the limit": "commit limit 127.6 GB (31.6 GB of RAM + a 96 GB page file); about 25 GB of it is the system's. Device allocations of ~3.5 GB and up count against it one for one, smaller ones did not (tmp/kvr/hipfill_test.py, hiprealloc_test.py)",
+  "the leak": "ggml-alloc freed and reallocated the target's 3352 MiB compute buffer whenever a graph needed a few MiB more than the reserved one (3352 -> 3357 -> 3362 -> 3367 MiB); ROCm on Windows keeps a freed buffer's commit, and a request a few MiB larger never reuses it, so each reallocation added ~3.4 GB for the rest of the process. 0.1.10 did it twice in the four-conversation run and peaked at 90.5 GB, 2.4 GB from the limit; with the windows it happened three times and requests of 3-9 MB failed - the \"bad allocation\" seen once in ~16 runs on 0.1.10",
+  "the fix": "compute buffers get 3% + 16 MiB of headroom: no reallocation after the reserve; the same run peaks at 83.7 GB with 8.6 GB to spare"
+ },
+ "checks": "replay 40 / 40 (src/llama-kv-cells.h, src/llama-kv-cache.cpp, src/llama-kv-cache.h, src/llama-graph.h and ggml/src/ggml-alloc.c join the delta), 38 patches; vision_stress STRESS OK; the save probe 24-38 ms a gather",
+ "tried_and_dropped": {
+  "rebuilding the block keys after a move": "correct, but a batched rebuild does not round like the keys built as blocks complete: the moved conversation's second token went -0.154 -> -0.231; the keys now move with their cells",
+  "one \"rebuild every key\" flag for the pool": "it also had to widen the window to the pool, and only a graph of 128+ tokens clears it, so after any restore the MTP draft viewed the whole pool for the rest of the generation (+5 ms a pass)",
+  "moves through memory_update": "FAILED_PREPARE -> memory_update(true) -> retry worked, but re-reserved the worst-case graph on every move: 353 ms for the target"
+ },
+ "open": {
+  "mixed steps": "several conversations decoding together view the span from the first to the last of them, free runs included: more host work per step, and the MTP draft's dense attention reads those cells"
+ }
+}
