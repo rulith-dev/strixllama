@@ -52,7 +52,7 @@ python tools/manager.py <<< '{"op":"start","data":{"id":"<model-id>"}}'
 
 ## 里面到底有什么
 
-相对上游 llama.cpp 的全部改动是 **35 个文件**——3610 个里改了 31 个、新增 4 个。主要几项：
+相对上游 llama.cpp 的全部改动是 **40 个文件**——3610 个里改了 36 个、新增 4 个。主要几项：
 
 | | |
 | --- | --- |
@@ -78,11 +78,11 @@ python bootstrap/bootstrap.py --verify    # 当前树是否仍然完全一致
 是配方今天还能不能从零重建出这棵树，这有单独的工具：
 
 ```bash
-python tools/replay_bootstrap.py          # 干净上游 + 补丁集 == 那 35 个文件，逐字节相同
+python tools/replay_bootstrap.py          # 干净上游 + 补丁集 == 那 40 个文件，逐字节相同
 ```
 
-它按 `bootstrap/UPSTREAM.json` 里记的 blob 哈希，从克隆自带的 git 对象里取回那 31 个文件的上游版
-本——干净上游是重建出来的，不是信来的——然后重放整套快照和脚本再比对。结果是 **35 / 35**。
+它按 `bootstrap/UPSTREAM.json` 里记的 blob 哈希，从克隆自带的 git 对象里取回那 36 个文件的上游版
+本——干净上游是重建出来的，不是信来的——然后重放整套快照和脚本再比对。结果是 **40 / 40**。
 
 一开始并非如此。24 个里有 5 个没有任何脚本负责，其中就包括项目里最大的单项收益（干净重建会把它
 静默丢掉）；另有 3 个脚本已经漂移到打不上去。`tools/make_patch_script.py` 从两棵树生成补丁脚本、
