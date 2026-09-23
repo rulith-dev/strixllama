@@ -64,6 +64,12 @@ concurrent users — see [decode-budget.md](decode-budget.md).)
 
 **`-lzm on`** (mmap-style paging for the PLE table) is 4.2× slower than `-lzm on-direct` here.
 
+**IOMMU off** (halogen reports +13-16% prefill, gfx1151-engine +5%) is not a lever for this stack, and
+the GTR9 Pro's BIOS greys the option out anyway. Those engines read their weights in place from host
+memory registered with the GPU, the path the IOMMU translates. Here the weights and the KV cache live
+in the carve: with the model loaded and 33.6K tokens prefilled, the server's WDDM counters read 84.56 GB
+dedicated and 1.62 GB shared (staging and pinned buffers).
+
 **`QSA3_FORCE=1`** is a null test, not a shortcut. It lifts the kernel's `< 128 queries` gate, but the
 packed K/V operands it needs are only built under the prefill layout, so the predicate declines
 anyway. Perplexity, equivalence and speed all came back identical. Feeding that kernel at decode
