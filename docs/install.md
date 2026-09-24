@@ -172,34 +172,45 @@ is slower below it.
 
 ### Conversations come back from disk
 
-The server's RAM prompt cache (`--cache-ram`, on by default) keeps a finished conversation's
-tokens, state and recurrent checkpoints so it can be resumed on a later request; with
-`prompt_cache_disk` (default on, the *Keep conversation state on disk* switch) every such entry is
-also written under `config/jan/prompt-cache` and read back on a RAM miss, up to 16 GB, oldest
-first — so the cache survives restarts and many conversations. On this model a 34K-token session
-is 1.3–1.7 GB and reads back in about 1.4 s; the next turn then processes its own tokens only
-(13 against 33911, 0.6 s against 38 s). A restored state continues exactly as the live slot would
-(`docs/results/concurrency-mtp-20260921.json`, `prompt_cache_disk`). Conversations with images are
-not persisted. The slot save/restore endpoints are not a substitute: they carry the state but not
-the checkpoints, and without one a hybrid model re-processes the whole prompt.
+The server's RAM prompt cache (`--cache-ram`, on by default) keeps a short finished conversation's
+tokens, state and recurrent checkpoints so it can be resumed on a later request. `prompt_cache_disk`
+(the *Keep conversation state on disk* switch) adds a disk tier under `config/jan/prompt-cache`, up to
+the size in the profile, oldest first, that survives restarts. It is off by default since 0.1.13:
+nothing is written to the SSD unless you turn it on, and a conversation pushed out of its slot is then
+processed again when it returns.
+
+What it writes, since 0.1.13: a conversation's attention rows - about 29 KB per token on this model,
+the MTP draft's included - once each, 4096 positions at a time as they are computed; and its recurrent
+state, the part that changes with every token, only when the conversation leaves memory, because
+another one needs its cells or the server is stopped (the manager's unload has it write first). That is
+the state at its end and its last prompt's two latest checkpoints, 0.33 GB. A 173K-token conversation
+reads back in 1.6 s and a 33K-token one in 0.4 s, and the next turn processes its own tokens only; a
+restored conversation answers with the same tokens and probabilities as it would have kept resident
+(`docs/results/disk-tier-v3-20260924.json`). If the server dies rather than being stopped, the
+conversations it held come back only as far as the last time they left memory, and the rest is
+processed again. The directory holds only what this version writes: entries of an older format are
+deleted when the server starts, so after an upgrade they are processed once more. Conversations with
+images are not persisted. The slot save/restore endpoints are not a substitute: they carry the state
+but not the checkpoints, and without one a hybrid model re-processes the whole prompt.
 
 ### Several long conversations at once
 
 With more than one slot the slots share one KV pool, and by default it is the context: 262144 tokens
-for all of them together, so a second long conversation pushes the first out to the disk tier and
-back (a 173K-token conversation reads back in ~3.5 s). `kv_pool` - *KV pool* under Advanced, shown with
+for all of them together, so a second long conversation pushes the first out: processed again when
+it returns (~3 minutes at 173K tokens), or read back from the disk tier in ~1.6 s when that is on.
+`kv_pool` - *KV pool* under Advanced, shown with
 several slots - makes the pool larger while every conversation stays capped at the context: any size,
 one allocation, rounded up to 256 cells. Each token beyond the context costs this model about 39 KB of
 GPU memory and about 24 KB of Windows commit (RAM plus page file).
 
 On this machine commit is the limit, not the carve. With `kv_pool` 393216, conversations of 173K and
-155K tokens both stay resident and each answers its next question in under a second, but commit ran
-down to 0.04 GB and the disk tier could not get the 5 GB buffer it gathers such a conversation into;
-524288 failed with "bad allocation" although the carve had room for it (about 86 GiB allocated).
-Swapping two long conversations through the disk tier gets close to the limit on the default pool
-too. So for long conversations, enlarge the page file first - it costs disk space only. A loaded
-server with less than 8 GiB of commit left gets a warning on the page. Measured in
-`docs/results/kv-pool-20260924.json`.
+155K tokens both stay resident and each answers its next question in under a second, with 2.6 GB of
+commit left at the lowest point (0.1.12's disk tier, which gathered a long conversation into a 5 GB
+buffer, took it to 0.04 GB); 524288 failed with "bad allocation" although the carve had room for it
+(about 86 GiB allocated). On the default pool, swapping the same two through the disk tier keeps
+9.6 GB free. So for long conversations, enlarge the page file first - it costs disk space only. A
+loaded server with less than 8 GiB of commit left gets a warning on the page. Measured in
+`docs/results/kv-pool-20260924.json` and `docs/results/disk-tier-v3-20260924.json`.
 
 ### Shared GPU memory is decided per load, not by a switch
 

@@ -176,6 +176,24 @@ the carve but failed with "bad allocation". The same test found the default pool
 conversation sent back to its emptied slot by id - 186 s where the disk tier had it all - fixed:
 7 s now. Details: `docs/results/kv-pool-20260924.json`.
 
+**Disk tier version 3 (2026-09-24).** Version 2 still gathered a conversation's whole state into one
+buffer to save it and read it back whole - 5 GB at 173K tokens, which took the machine to its commit
+limit when two long conversations swapped (GitHub issue #1) - and since appending to the KV cache moves
+bytes in every layer's section of a serialised state, every save rewrote ~200 chunks. Version 3 never
+serialises a state. A conversation's attention rows (29 KB a token, draft included) go to disk once
+each, 4096 positions at a time as they are computed, named by their hash; its recurrent state, which
+changes with every token, only when the conversation leaves memory - the state at its end and the last
+prompt's two latest checkpoints, 0.33 GB - because another conversation needs its cells or the server
+is stopped (the manager's unload asks it to write first). Conversations of 173K and 155K tokens swapped
+through the default pool read back in 1.6 and 1.4 s (4.9 GB/s off the drive); 9.2 GB of rows were
+written for 329K positions and 0.9 GB of state for three evictions, and commit never went below 9.6 GB
+(version 2: 0.01). Two 33K chats taking ten turns with five evictions answered bitwise as they did kept
+resident - after one fix: the graph that rebuilds the sparse-attention block keys, the first after any
+restore or rewind, scored with the F32 keys it had just computed where every other graph scores with
+the F16 keys the cache holds; it now reads them back too (perplexity unchanged to four places). The
+store keeps only what the build writes: entries of an older format are deleted at startup. The disk
+tier is off by default since 0.1.13. Details: `docs/results/disk-tier-v3-20260924.json`.
+
 **The build layout ran on the display driver's HIP runtime (found 2026-09-24).** A build run from
 `bin/hip-rocm101` or the build directory had no ROCm DLLs beside it, and Windows searches System32 before
 PATH, so it loaded the driver's `amdhip64_7.dll` instead of the SDK's that the bundle ships. Same binaries,
@@ -211,6 +229,13 @@ gate could not see them:
 
 ## What is still open
 
+- With MTP, a long answer after a checkpoint rewind can part from the first pass at a near tie. The
+  target's rewind is exact - with MTP off, 400 tokens after rewinding a 93K-token prompt are bitwise
+  the first pass - but with it on the two part at token 293 on a -1.615 / -1.628 tie that the draft's
+  acceptance put in a different batch shape. The draft context after a rewind is the suspect
+  (`rewind` in `docs/results/disk-tier-v3-20260924.json`).
+- A resident conversation's checkpoints stay in system RAM, up to 32 a slot at 0.11 GB each: the disk
+  tier writes the recurrent state only when a conversation leaves memory, so it no longer pages them out.
 - Graph reuse on speculative decodes is ~45%: the draft context alternates between two batch shapes
   against one cached graph result. More than one live result needs scheduler surgery.
 - `set_input_kq_mask` scans all 85K cells once per decode (~0.9 ms).

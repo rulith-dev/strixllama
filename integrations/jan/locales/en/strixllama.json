@@ -93,7 +93,7 @@
       "gpuLayers": "GPU layers",
       "gpuLayersHelp": "999 offloads as many layers as fit",
       "promptCacheDisk": "Keep conversation state on disk",
-      "promptCacheDiskHelp": "Conversations are written to disk in the background as they grow, a block at a time and only what changed (a few hundred MB, never the whole state at once), and read back when they return, so their prompt is not processed again: a 79K-token conversation comes back in about 4 seconds instead of 97 seconds of prefill. While there is room they also stay in their slots, so switching between conversations is immediate. Survives restarts. Applies on the next load.",
+      "promptCacheDiskHelp": "Off by default. When on, a conversation's attention rows are written to disk once each, as they are computed, and its recurrent state - the part that changes - only when the conversation leaves memory: another conversation needs its room, or the model is unloaded (about 0.3 GB each time). When it returns it is read back instead of processed again: a 173K-token conversation in about 1.6 seconds instead of three minutes of prefill. Survives restarts; conversations saved by older versions are removed. Applies on the next load.",
       "promptCacheDiskMib": "Disk limit for conversation state (MB)",
       "promptCacheDiskMibHelp": "How much the folder above may hold before the oldest conversation is removed. A long conversation of this model is several GB, so 16384 keeps about three of them; raise it if the drive has room."
     },

@@ -398,3 +398,17 @@ No new files in the delta (40: 36 modified, 4 added); replay 40 / 40, 39 patches
 | patch | files | what |
 |---|---|---|
 | `apply_empty_slot_cache` | `server-context.cpp` | a slot named by id that holds nothing takes the prompt-cache path: `f_keep` was 0/0 there, a NaN that compares false, so a 173K-token conversation sent back to its emptied slot was processed again from its first token (186 s) although the disk tier held all of it; now it is read back (7 s) |
+
+## Addendum 2026-09-24: disk tier version 3
+
+`tools/server/server-context.h` and `tools/server/server.cpp` join the delta (42 files: 38 modified, 4
+added); replay 42 / 42, 41 patches. Measured in `docs/results/disk-tier-v3-20260924.json`.
+
+| patch | files | what |
+|---|---|---|
+| `apply_qsa_kb_rebuild_f16` | `qwen4exp.cpp` | the graph that rebuilds the block-key cache (a conversation's first, and the first after a restore or a checkpoint rewind) scores with the keys read back from the cache, in F16, as every later graph does - it scored with the F32 keys it had just computed, so a restored conversation and a resident one selected slightly different blocks on their next batch (same tokens, logprobs up to 0.34 apart). Perplexity at ctx 4096 unchanged to four places at ubatch 4096 and 512, and identical to the cache switched off |
+| `apply_disk_tier_v3` | `llama.h`, `llama-context.cpp`, `llama-kv-cache.cpp`, `.h`, `llama-memory-hybrid-idx.cpp`, `.h`, `server-task.cpp`, `.h`, `server-context.cpp`, `.h`, `server.cpp` | `llama_strix_kv_*`: a sequence's attention rows (KV cache and indexer) read and written by position, and cells allocated for a restore. The disk tier keeps a conversation's rows in runs of 4096 positions, each written once as it fills and named by its XXH3-128; the recurrent state only when the conversation leaves memory - a short last run, the state at its end and its last prompt's two latest checkpoints - when another conversation needs its cells or `POST /strix/persist` asks (the manager does before a stop). A restore allocates the cells, streams the runs in with the next read under way and puts back the latest checkpoint they reach. The store keeps only the format the server writes for the model: entries of an older one (version 1 anywhere, version 2 where rows are served) are deleted as it opens, with the objects only they named, and the version 1 conversion is gone |
+
+Checked bitwise against the same conversations kept resident in a pool that holds both: a 173K and a 155K
+conversation swapped through a one-conversation pool, and two 33K chats taking ten turns with five
+evictions, gave the same tokens and the same top-3 logprobs at every step that carries them.

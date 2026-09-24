@@ -352,6 +352,27 @@ class ManagerTests(unittest.TestCase):
             m.handle('stop',{})
             identity.assert_called_with(123,True,ident)
         self.assertNotIn('identity',m.read_json(m.DATA/'process.json',{}))
+    def test_a_stop_with_the_disk_tier_on_first_has_the_server_write_its_conversations(self):
+        # the tier writes a conversation's recurrent state only when it leaves memory, and a stop is that
+        ident={'pid':123,'exe':str(m.RUNTIME.resolve()),'birth':456}
+        calls=[]
+        class Res:
+            def __enter__(self):return self
+            def __exit__(self,*a):return False
+            def read(self):return b'{"success":true}'
+        def opener(req,timeout=None):
+            calls.append((req.full_url,req.get_method()));return Res()
+        for disk,asked in ((True,1),(False,0)):
+            calls.clear()
+            m.atomic_json(m.DATA/'process.json',{'identity':ident,'adopted':False,'profile':{'prompt_cache_disk':disk}})
+            with patch.object(m,'process_identity',return_value=ident) as identity,patch.object(m.HTTP,'open',side_effect=opener):
+                m.handle('stop',{});identity.assert_called_with(123,True,ident)
+            self.assertEqual(len(calls),asked)
+            if asked:self.assertEqual(calls[0],('http://127.0.0.1:8080/strix/persist','POST'))
+        # a runtime without the endpoint, or one that does not answer, is stopped all the same
+        m.atomic_json(m.DATA/'process.json',{'identity':ident,'adopted':False,'profile':{'prompt_cache_disk':True}})
+        with patch.object(m,'process_identity',return_value=ident) as identity,patch.object(m.HTTP,'open',side_effect=m.urllib.error.URLError('404')):
+            m.handle('stop',{});identity.assert_called_with(123,True,ident)
 
     def test_defaults_are_the_measured_configuration_per_architecture(self):
         model=first_model()
@@ -483,23 +504,25 @@ class ManagerTests(unittest.TestCase):
         # the pool decides the load's memory, so a load that ran out of it is not remembered for another size
         self.assertNotEqual(m.memory_fingerprint(cfg),m.memory_fingerprint(dict(cfg,kv_pool=0)))
     def test_disk_prompt_cache_is_a_switch_that_sets_the_server_environment(self):
-        on=m.runtime_environment(m.validate_profile({'mtp':False},self.model))
+        # off unless asked for: nothing goes to the SSD by default
+        self.assertIs(m.validate_profile({'mtp':False},self.model)['prompt_cache_disk'],False)
+        on=m.runtime_environment(m.validate_profile({'mtp':False,'prompt_cache_disk':True},self.model))
         self.assertEqual(Path(on['STRIX_PROMPT_CACHE_DIR']),m.DATA/'prompt-cache');self.assertEqual(on['STRIX_PROMPT_CACHE_MIB'],str(m.PROMPT_CACHE_DISK_MIB))
         off=m.runtime_environment(m.validate_profile({'mtp':False,'prompt_cache_disk':False},self.model))
         self.assertNotIn('STRIX_PROMPT_CACHE_DIR',off)
         with self.assertRaises(ValueError):m.validate_profile({'prompt_cache_disk':'yes'},self.model)
     def test_idle_slots_stay_warm_and_the_disk_tier_writes_in_blocks(self):
-        cfg=m.validate_profile({'parallel':4,'vision':False},self.model)
+        cfg=m.validate_profile({'parallel':4,'vision':False,'prompt_cache_disk':True},self.model)
         self.assertIn('--no-cache-idle-slots',m.argv(self.model,cfg))
         env=m.runtime_environment(cfg)
         self.assertEqual(env['STRIX_PROMPT_CACHE_BLOCK'],str(m.PROMPT_CACHE_BLOCK_TOKENS))
         self.assertNotIn('STRIX_PROMPT_CACHE_BLOCK',m.runtime_environment(m.validate_profile({'prompt_cache_disk':False},self.model)))
 
     def test_the_disk_prompt_cache_ceiling_is_a_profile_field(self):
-        env=m.runtime_environment(m.validate_profile({'prompt_cache_disk_mib':204800},self.model))
+        env=m.runtime_environment(m.validate_profile({'prompt_cache_disk':True,'prompt_cache_disk_mib':204800},self.model))
         self.assertEqual(env['STRIX_PROMPT_CACHE_MIB'],'204800')
         # a profile saved before the field existed keeps the old ceiling
-        env=m.runtime_environment(m.validate_profile({},self.model))
+        env=m.runtime_environment(m.validate_profile({'prompt_cache_disk':True},self.model))
         self.assertEqual(env['STRIX_PROMPT_CACHE_MIB'],str(m.PROMPT_CACHE_DISK_MIB))
         with self.assertRaises(m.ManagerError) as caught:
             m.validate_profile({'prompt_cache_disk_mib':512},self.model)

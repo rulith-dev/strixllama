@@ -25,27 +25,29 @@
   "ggml/src/ggml-cuda/strixllama-getrows-cast.cu": "5019f6b5201fd11d2d77c00a7a4df1ee387813d4acc28455fddd43105ec80a9a",
   "ggml/src/ggml-cuda/strixllama-getrows-cast.cuh": "ed9f51c30db922f743196cca350a1554067fd0fa021f404910ea6bea91d753dc",
   "ggml/src/ggml-cuda/vecdotq.cuh": "3b879a937d5143902db4cae2530529c32fd464dbfb822a7fe31875aba57707ce",
-  "include/llama.h": "c0a99abe8091b8aa2eb5493bfcedc41cd4c5f9cf48193de1c11cfe799427b722",
-  "src/llama-context.cpp": "dc5eff3638513258dc857ceacc9e250013a455c9687d9bd872e7664a95462a85",
+  "include/llama.h": "646aed8696541c2a6dc0b034600fd06a50599d87e13db10448a5f5472b0f2a30",
+  "src/llama-context.cpp": "14d0dced1e69aab56d2cd6d00a55cc3688029c2f8739664285813e063cd0a3a9",
   "src/llama-graph.cpp": "210c5c387fa812b0cf6d14dfeff8d1b4484c574f233049a86c09d199977428e0",
   "src/llama-graph.h": "c4814656cea3a6f0d28c55bb9dd9f290852a394efbe65c66ce033d55921a6856",
-  "src/llama-kv-cache.cpp": "2ac77418d95deabb05b9009670e5a36e9d6b3fd5410e67b0327136b2cfd97530",
-  "src/llama-kv-cache.h": "7209c221f18af68e76ad0e5a71e77720dbaab034880a36f9900da335a1dca1c0",
+  "src/llama-kv-cache.cpp": "8183218f9e8de42fa09c44ce787596595d84b082516ff10eb32030be138d43c7",
+  "src/llama-kv-cache.h": "480dc917287ff2ba647cb4a8a0b9b2582a3e6228271b8a403d278a34edbed1f3",
   "src/llama-kv-cells.h": "6cb735c3bee59e564be000c3c8b83e6696974aa106a081790c72d1f4e75db9f4",
   "src/llama-lazy-reader.h": "4378a2edb78f1c840526e67b7d36d585f71e49cef48502bb618804c0216f417f",
-  "src/llama-memory-hybrid-idx.cpp": "197fd69a3ef8726d820f396cf048729fe879e6863eaf9871b4e556a2ae7be9a1",
-  "src/llama-memory-hybrid-idx.h": "3737ef4c1967800bafbe256c09dda1786d0fd22f49c9f7fcfb6fe153c7bbc063",
+  "src/llama-memory-hybrid-idx.cpp": "c09e63b3765e36b60d9d3cd6d6984dc15b5cb85835bfcd6ed5fed3e56af6bef3",
+  "src/llama-memory-hybrid-idx.h": "feb72dd4dbc54e6d771a2e2a83490d32c1294c2869bf9f47e34296f016a6ad2b",
   "src/llama-memory-recurrent.cpp": "201b89af2e54b20800090392ba111e7ae29c2d991976040ba6f302e324f1f869",
   "src/llama-memory-recurrent.h": "f25504b3f27150834f9f74fc48b274e4b1dae3a9ebff7a557ad0a2486d93c369",
   "src/llama-model.cpp": "ee9b24fcd6227fea4e27dc5322fac0a08254d0483b1b0165767eabbabc9322dc",
   "src/llama-model.h": "934dfaf7862ed94699692cfe4d93f7a1fbd7b646d4577dbd0ba197ee2f953175",
   "src/models/block-graph.inc": "716077d2dd61f3d7edb94945eaf1cd4aa2bb86f452eff22832d9cf279d55ec07",
-  "src/models/qwen4exp.cpp": "555531c21df3142570cefb4b1a7c9f96786c9f267041236d669d9fbbae6d7b4c",
+  "src/models/qwen4exp.cpp": "81b542caaaa73796cfdda5521b1675434fcb408cc3891fdaa95107d9f01c7f97",
   "src/prefix.h": "8ff0afa90c0f8a93411faf13de1d989ee8b8877518be15fcb40d31c464dc4afa",
   "tests/test-backend-ops.cpp": "63b40d1aa142a62032da8bab47b53513b688fe8a18b6980ac07300f672c007c0",
-  "tools/server/server-context.cpp": "c3e71bd4cede73db5e21b9e5eeed9b7c2dff26de7d97e510152f3f9bf62dbbab",
-  "tools/server/server-task.cpp": "98db2e176c06588665460b36713f1e8b63de98c0526e0b57412a3bdf768fab71",
-  "tools/server/server-task.h": "8772cab48cb3701cd3d1c7276876ef059d173875ecf29412330568fba1aef8e3"
+  "tools/server/server-context.cpp": "8358f3b27ccf58f1bfb5675f313fc83fe8eb850f3ac064609c7b6f0d328d5779",
+  "tools/server/server-context.h": "9961ba75727e421993b1a4be35900487bd4b527e5b85c6b6496b852d17172f3c",
+  "tools/server/server-task.cpp": "5b45aabac0ba18fa77fc6b2166e8b801b2df32f931a89859796a5cc657fceca4",
+  "tools/server/server-task.h": "d5e3ab275e921ea7371f90f74edadf4b93f3ee38094af07aa229869b20bcac53",
+  "tools/server/server.cpp": "5e2e8284457fac873a7871bb0201e0e17494025213b0be50cfeb02be2f377daa"
  },
  "repo": "https://github.com/pwilkin/llama.cpp",
  "revision": "f5daaa3cfa6358e5dd398911ec741813745a5440",
@@ -186,6 +188,10 @@
    "git_blob": "b6835e43459e3e9f1ea951e9f96f9ade22074cba",
    "sha256": "2f5d65ce6ef0504b5c8cf55a74c68d3959c49784ba380ef836566b7a7d5fa12b"
   },
+  "tools/server/server-context.h": {
+   "git_blob": "0acbbffa9e103b8c4ef8fbb8b041a0966277cdb7",
+   "sha256": "8885184dc08bd35f7b96cdbec92efa440b0b4d4e2bd5fc81ab8cf0c408430b73"
+  },
   "tools/server/server-task.cpp": {
    "git_blob": "0d3beb313ceabbb903de57d185140a8e5a079e4b",
    "sha256": "0fd5c8df2525e61214986e8abe3fc4edbb92f5dd652c9c2bfd1bc2712218a585"
@@ -193,6 +199,10 @@
   "tools/server/server-task.h": {
    "git_blob": "9c99143f8e1983f2cbe45245d68d8e5937b7f6c6",
    "sha256": "413733f2c47897e9a531dbc382a72e7676d46164d92996da1f008185f059bcf2"
+  },
+  "tools/server/server.cpp": {
+   "git_blob": "22378b38c5ef1fa70d82c3b32a8907a658dd151a",
+   "sha256": "a0b400372a697182fb552c946579f74e81a845aa6d37e4b40b978ff4be5e016c"
   }
  }
 }

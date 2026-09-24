@@ -1,0 +1,50 @@
+{
+ "question": "version 2 still gathered a conversation's whole state into one buffer on every save and read it back whole (5 GiB at 173K tokens - the commit limit when two long conversations swapped, GitHub issue #1), and rewrote ~200 chunks per save because appending to a KV cache moves bytes in every layer's section of a serialised state. Can the disk tier write each KV row once, never a whole state, and write the recurrent state - the part that changes - only when a conversation leaves memory?",
+ "setup": "production profile with 4 slots, MTP on, image input off, the disk tier in a scratch directory; the 0.1.13 runtime (bin/hip-rocm101 after bootstrap --build, bitwise the build tree it was developed in, the SDK's HIP runtime beside both). Probes: tmp/kvr/two_long_probe.py, tmp/kvr/v3_chat_probe.py, tmp/kvr/v3_restart_probe.py, tmp/kvr/rewind_probe.py, tmp/kvr/ppl_kb.py",
+ "design": {
+  "rows": "llama_strix_kv_row_size / get_rows / set_rows / alloc: a sequence's attention rows by position - the KV cache's K and V for every layer, then the sparse-attention indexer's keys - laid out per cache and per layer as a state's data is. 29.3 KiB a position on this model, the MTP draft's included (target 27.0, draft 2.2). alloc gives a sequence cells for positions [0, n) as text tokens, in one run (after a re-layout if need be), the indexer mirroring the attention cache cell for cell",
+  "runs": "a conversation's rows go to disk in runs of 4096 positions, each named by the XXH3-128 of its rows (runs/xx/<hash>.run) and written once: the write-through at the top of the server loop hands over every run that has filled; a run that ends short is written only when the conversation leaves, and the next run starts where it ends, so nothing is rewritten when the conversation comes back and grows. A run whose rows the store has already (the same text computed the same way) is not written again",
+  "recurrent_state": "the recurrent (GDN) state is one per sequence and changes with every token, so it is written only when the conversation leaves memory: the state at its end and its last prompt's two latest checkpoints (4 tokens before the prompt's end - a regenerate, or a template that drops the thinking, goes back there - and for a short turn the start of its last user message), 0.11 GiB each. Checkpoints the store has already are named, not written; a resident conversation's older checkpoints are never written",
+  "leaving": "a conversation leaves memory when another one needs its cells (make_room before a completion) or when the server is stopped: POST /strix/persist writes every idle slot that way and answers when the writer is done, and the manager's stop calls it when the disk tier is on before it terminates the process",
+  "manifest": "version 3: version 2's header and checkpoint list, then the target's row size and runs (hash, first position, length, positions used), then the draft's",
+  "restore": "the entry whose latest checkpoint within the runs' reach and the prompt's common prefix skips the most tokens; cells for its positions, the runs read one ahead of the one being uploaded (std::async), then the checkpoint's recurrent state; a missing or damaged run or checkpoint gives the cells back, marks the object bad and processes the prompt",
+  "older_formats": "a store holds the format this build writes for the model and nothing older: as it is opened, entries of an earlier format are deleted, not read or converted - they may be from any build back to 0.1.4 - and the objects only they named are swept. That is version 3 for a model whose contexts serve rows by position, version 2 for any other; version 1 (0.1.4-0.1.6) is deleted everywhere and its background conversion is gone. A format newer than the build knows is left alone, and with it present nothing is swept"
+ },
+ "bitwise": {
+  "what": "the same conversation restored from disk against the same conversation kept resident in a pool that holds both: greedy, the tokens and their top-3 logprobs wherever the server reports them (the first token of every answer and every token decoded singly; MTP-drafted tokens carry none)",
+  "mid_36K_34K": "A (36.6K tokens) and B (34.1K) through a one-conversation pool: A came back to the checkpoint 4 tokens before its prompt's end (lcp ended there), B to the state at its end. A was bitwise the resident A; B had the same tokens but logprobs up to 0.34 apart. With the block-key cache off B was bitwise too: the graph that rebuilds the block keys - the first after a restore - scored with the F32 keys it had just computed while every other graph scores with keys read back from the F16 cache (apply_qsa_kb_rebuild_f16). After that fix B is bitwise the resident B",
+  "chat_33K_x2": "two chats of 33.6K and 34.2K tokens taking ten turns through /v1/chat/completions, as Jan sends them (no id_slot), in the default pool: five evictions and five restores. Every answer (48 tokens) had the same tokens and top-3 logprobs as in a pool of 131072 where nothing left",
+  "long_173K_155K": "A (172.7K tokens) and B (155.6K) on one frozen text (tmp/kvr/twolong_text_20260924.txt): swapped through the default pool - A back from disk in 1690 ms, B in 1509 - against both resident in a pool of 393216; the questions to A and B gave the same tokens and top-3 logprobs"
+ },
+ "measured": {
+  "long_173K_155K": {
+   "test": "tmp/kvr/two_long_probe.py, default pool 262144: A (173.3K tokens), then B (155.5K) pushes A out, then a question to A (B out, A back), then one to B",
+   "restore": "A: 173270 tokens, 4.943 GiB in 1612 ms (the file 1042 ms at 4859 MB/s, 86 runs); B: 155486 tokens, 4.447 GiB in 1446 ms (933 ms at 4880 MB/s, 76 runs). The questions then processed 21 and 14 tokens",
+   "written": "runs 9.191 GiB for 328.8K positions (29.3 KiB each, every one once, in 43 jobs of 41-244 ms, median 114); recurrent state 0.880 GiB in three evictions (3 + 3 + 2 checkpoints; the third conversation's earlier ones were in the store already)",
+   "commit": "the least commit left while it ran: 9.64 GB. Version 2 ran it down to 0.01 GB on the same test (docs/results/kv-pool-20260924.json)",
+   "commit_pool_393216": "the same two resident in a pool of 393216 (kv_pool): 2.61 GB of commit left at the lowest, while B was prefilled (0.1.12: 0.04 GB, with the disk tier failing to gather its 5 GB buffers)"
+  },
+  "chat_33K_x2": {
+   "restores": "33.8-34.4K tokens, 1.05-1.07 GiB in 377-404 ms each; the next turn processed 20-24 tokens, 3.0-3.8 s with the 48-token answer",
+   "written": "runs 1.909 GiB (in place: 1.832 - the short runs the evictions add) and recurrent state 1.650 GiB, 0.33 GiB per eviction",
+   "commit": "at least 16.6 GB left throughout (in place, pool 131072: 12.05)"
+  },
+  "restart": {
+   "graceful": "chat A (30.6K tokens, then one more turn), POST /strix/persist: answered in 0.2 s (1 conversation; the writer wrote 2 short runs, 0.055 GiB, and 3 checkpoints, 0.33 GiB, in 99 ms); the server killed and started again: A's next turn read 30639 tokens back (0.965 GiB in 391 ms) and processed 22",
+   "crash": "A (33.6K) in memory, B (34.2K) pushed A out, B took a second turn, the server killed: after the restart B came back only as runs, so its prompt was processed (34.3K tokens, 36.5 s) - and its runs were not written again but for 4 of 40 (the stretch whose prefill batches fell differently this time; the rest had the same hashes); A came back from the state written when it left: 33666 tokens in 395 ms, 22 tokens processed",
+   "version_2": "before the store kept only its own format: 0.1.12's version 2 entries were read by this build (33666 tokens, 1.052 GiB in 346 ms) and the conversation rewritten as version 3 - superseded by the deletion below",
+   "older_formats": "a store with a version 1 entry (the header 0.1.4-0.1.6 wrote), 0.1.12's version 2 entry (34217 tokens, 468 chunks) and two version 3 entries: at startup the version 1 and 2 entries were deleted, with 1.18 GiB of objects only they named (all 468 chunks and the one checkpoint the version 3 entries did not share); the version 3 entries stayed. A version 4 file put there next was left alone, and nothing was swept with it present (tmp/kvr/v3_oldformat_probe.py)"
+  }
+ },
+ "block_key_rebuild": {
+  "change": "apply_qsa_kb_rebuild_f16: the graph that rebuilds the block-key cache reads the keys back from the cache before it scores, as every other graph does",
+  "perplexity": "tmp/realtext.txt, ctx 4096, 16 chunks: 2.6476 at ubatch 4096 and 2.6510 at ubatch 512, identical in every chunk to the block-key cache switched off (all keys F32)",
+  "truncation": "tools/truncation_test.py --fill 79000 on the 0.1.13 runtime: 77394-token prompt, both repetitions reached section 30/30 (1194 and 881 tokens, stop)",
+  "rewind": "the same prompt twice, the second pass rewinding to the checkpoint 4 tokens before its end: bitwise the first pass for 16 tokens at 15.9K, and for 400 tokens at 93.4K with MTP off. With MTP on the texts part at token 293 of 400 - a near tie (-1.615 against -1.628) that the draft's acceptance put in a different batch shape; the draft after a rewind is not yet known to be exactly the draft before it (open)"
+ },
+ "not_done": [
+  "a resident conversation's checkpoints stay in RAM (up to 32 a slot, 0.11 GiB each) - version 2 wrote them and paged them out; version 3 writes them only when the conversation leaves, most never",
+  "a server that dies rather than being stopped loses the recurrent state of the conversations it held: they come back only as far as the last time they left memory",
+  "with MTP, a long answer after a restore or a rewind can part from the resident one at a near tie (see rewind)"
+ ]
+}

@@ -221,11 +221,16 @@ DEFAULTS = dict(context=262144, gpu_layers=999, threads=16, batch=8192, ubatch=8
                 # +2.9 GB VRAM, prefill untouched, decode -9%. Off by default so smaller carves still load.
                 trunk_decode_q6k=False,
                 # prompt_cache_disk: the server's prompt cache gets a disk tier (config/jan/prompt-cache,
-                # PROMPT_CACHE_DISK_MIB). A finished conversation's state - ~30 KB per token for this model,
-                # checkpoints included - is written when its slot is reused and read back when the
-                # conversation returns, so it skips the prefill: a 34K-token session reads back in well
-                # under a second against ~40 s of prefill. Survives restarts.
-                prompt_cache_disk=True,
+                # PROMPT_CACHE_DISK_MIB). A conversation's attention rows - ~29 KB per token for this model,
+                # draft included - are written once, 4096 positions at a time, as they are computed; its
+                # recurrent state, the part that changes, only when it leaves memory: another conversation
+                # needs its cells, or the server is stopped (stop has it write first). When the conversation
+                # returns it is read back instead of processed - 33K tokens in 0.4 s against ~35 s of
+                # prefill - and that survives restarts. Off by default since 0.1.13: nothing is written to the
+                # SSD unless asked for (0.1.12's tier also moved whole states through RAM, 5 GB at 173K
+                # tokens, which took this machine to its commit limit when two long conversations swapped:
+                # GitHub issue #1).
+                prompt_cache_disk=False,
                 # prompt_cache_disk_mib: the ceiling for that directory. Oldest goes first once it is
                 # reached, so the only cost of a larger number is disk; 200 GiB of a 1 TB drive keeps
                 # every conversation this machine can hold.
@@ -808,6 +813,19 @@ def process_identity(pid, terminate=False, expected=None):
     finally: k.CloseHandle(handle)
 
 
+def persist_conversations(saved):
+    """Before a stop, with the disk tier on: the conversations still in the server's slots leave memory with it,
+    and the tier writes a conversation's recurrent state only when it leaves (POST /strix/persist answers once
+    the writer is done). Best effort - a runtime without the endpoint, or one that does not answer in time, is
+    stopped all the same."""
+    if not (saved.get('profile') or {}).get('prompt_cache_disk'): return
+    try:
+        req = urllib.request.Request(f'http://127.0.0.1:{PORT}/strix/persist', data=b'{}', method='POST',
+                                     headers={'Content-Type': 'application/json'})
+        with HTTP.open(req, timeout=150) as res: res.read()
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError): pass
+
+
 def discover():
     script = "[Console]::OutputEncoding = [Text.UTF8Encoding]::new(); Get-CimInstance Win32_Process -Filter \"Name = 'llama-server.exe'\" | Select-Object ProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress"
     p = subprocess.run(['powershell.exe','-NoProfile','-Command',script],capture_output=True,encoding='utf-8',errors='replace',creationflags=HIDDEN,timeout=15)
@@ -981,7 +999,9 @@ def handle(op, data):
         return {'profile':cfg,'restart_required':bool(state().get('identity')),'argv':argv(m,cfg)}
     if op=='stop':
         s=state()
-        if s.get('identity'): process_identity(s['identity']['pid'],True,s['identity'])
+        if s.get('identity'):
+            persist_conversations(s)
+            process_identity(s['identity']['pid'],True,s['identity'])
         atomic_json(DATA/'process.json',{'last_log':s.get('log',s.get('last_log',''))})
         return {'status':'stopped'}
     if op=='start':
