@@ -194,6 +194,21 @@ the F16 keys the cache holds; it now reads them back too (perplexity unchanged t
 store keeps only what the build writes: entries of an older format are deleted at startup. The disk
 tier is off by default since 0.1.13. Details: `docs/results/disk-tier-v3-20260924.json`.
 
+**A slot that fails part way loses its conversation (2026-09-24, GitHub issue #1).** Long agent sessions
+near the commit limit logged "non-consecutive token position" - batches that fed the recurrent state
+positions it had already seen, or skipped some - and ended in a GPU fault. Every place the server
+caught an exception mid-turn released the slot and kept its conversation, although part of a batch had
+been recorded in its tokens and not run; under commit exhaustion `std::bad_alloc` comes from ordinary
+work such as a 110 MB checkpoint, and with one slot the leftover tokens aborted the server on an
+assert. A failing slot now leaves the batch and loses its conversation (processed again, or read back
+from the disk tier), and a prompt batch starts only on a cache whose positions match its tokens.
+Injected failures at three sites recover to the tokens of a server that never failed; an agent
+workload (regenerate, aborted streams, trimmed tool output, two conversations on one slot) ran to 132K
+tokens with neither warning. The same round cut what a resident conversation keeps: its last prompt's
+checkpoints and one per 32K tokens, at most 0.9 GB of system RAM a slot instead of 3.5, and the disk
+tier stores that spacing too, so a conversation read back from disk can still be rewound cheaply.
+Details: `docs/results/slot-state-guard-20260924.json`.
+
 **The build layout ran on the display driver's HIP runtime (found 2026-09-24).** A build run from
 `bin/hip-rocm101` or the build directory had no ROCm DLLs beside it, and Windows searches System32 before
 PATH, so it loaded the driver's `amdhip64_7.dll` instead of the SDK's that the bundle ships. Same binaries,
@@ -234,8 +249,6 @@ gate could not see them:
   the first pass - but with it on the two part at token 293 on a -1.615 / -1.628 tie that the draft's
   acceptance put in a different batch shape. The draft context after a rewind is the suspect
   (`rewind` in `docs/results/disk-tier-v3-20260924.json`).
-- A resident conversation's checkpoints stay in system RAM, up to 32 a slot at 0.11 GB each: the disk
-  tier writes the recurrent state only when a conversation leaves memory, so it no longer pages them out.
 - Graph reuse on speculative decodes is ~45%: the draft context alternates between two batch shapes
   against one cached graph result. More than one live result needs scheduler surgery.
 - `set_input_kq_mask` scans all 85K cells once per decode (~0.9 ms).

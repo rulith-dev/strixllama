@@ -412,3 +412,16 @@ added); replay 42 / 42, 41 patches. Measured in `docs/results/disk-tier-v3-20260
 Checked bitwise against the same conversations kept resident in a pool that holds both: a 173K and a 155K
 conversation swapped through a one-conversation pool, and two 33K chats taking ten turns with five
 evictions, gave the same tokens and the same top-3 logprobs at every step that carries them.
+
+## Addendum 2026-09-24: two patches after 0.1.13
+
+No new files in the delta (42: 38 modified, 4 added); replay 42 / 42, 43 patches. Measured in
+`docs/results/slot-state-guard-20260924.json`.
+
+| patch | files | what |
+|---|---|---|
+| `apply_slot_state_guard` | `server-context.cpp` | GitHub issue #1. Every place the server caught an exception mid-turn released the slot and kept its conversation, although part of a batch had been recorded in its tokens and not run (or run and not recorded) - under commit exhaustion std::bad_alloc comes from ordinary work, and the next request then fed the recurrent state positions it had seen or skipped ("non-consecutive token position"); with one slot, its tokens left in a batch nobody owned aborted the server on an assert. A slot that throws now leaves the batch being built and loses its conversation, as a decode error already made it, and so does every slot the pre-decode, decode and post-decode handlers catch. Before a prompt batch the slot's tokens must match its memory, or the prompt is processed from its start. `STRIX_FAULT=<site>:<n>` (ckpt, decode, post) throws on the n-th pass, for tests |
+| `apply_disk_ckpt_step` | `server-context.cpp`, `server-task.h` | a leaving conversation's older checkpoints go to the disk tier as well, one every 32768 tokens, each written once: a conversation read back from disk kept only its last prompt's, and a deeper rewind (an agent trimming an early tool result) processed it again from its first token |
+
+With them the manager passes `--ctx-checkpoints 8 --checkpoint-min-step 32768`: a resident conversation keeps its
+last prompt's checkpoints and one per 32K tokens, at most 0.9 GB of system RAM a slot instead of 3.5.

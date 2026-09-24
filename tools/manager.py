@@ -91,10 +91,18 @@ PROMPT_CACHE_DISK_MIB = 16384
 # was the ~8 GB that came back when the model was unloaded. 1 GiB keeps short conversations resident;
 # anything larger goes to the disk tier alone (prompt_save falls back to it when the RAM tier declines)
 PROMPT_CACHE_RAM_MIB = 1024
-# the disk tier writes a conversation again once it has grown by this many tokens since it was last written,
-# in the background and only what changed (a few hundred MB for a 79K-token conversation, against 5.7 GB for
-# the whole state): a restart loses at most this much, and a slot can be freed later without writing anything
+# for a model the disk tier keeps as a whole state (version 2), how far a conversation grows before it is written
+# again; version 3 - this model - writes rows in runs of 4096 positions as they are computed, and takes this only
+# as the switch that lets idle slots hand over the runs they filled while busy
 PROMPT_CACHE_BLOCK_TOKENS = 4096
+# context checkpoints: the recurrent state at a point of a conversation, 0.11 GB each on this model, kept in system
+# RAM while the conversation is resident. The last prompt's are the ones used - a regenerate, and the next turn of a
+# template that drops the thinking, go back to just before its end; older ones only serve a deeper rewind (an edited
+# earlier message, an agent trimming old tool output), which without one is processed again from further back.
+# llama-server keeps up to 32 at least 8192 tokens apart, 3.5 GB a slot; this keeps the last prompt's and one per
+# 32K tokens before them, at most 0.9 GB a slot, and a deep rewind replays at most ~32K tokens (~35 s)
+CTX_CHECKPOINTS = 8
+CHECKPOINT_MIN_STEP = 32768
 # the largest KV pool a profile may ask for (kv_pool): four full-length conversations. What actually fits is the
 # GPU carve and the commit limit's business; this only stops a typo from asking for terabytes
 KV_POOL_MAX = 1048576
@@ -742,8 +750,10 @@ def argv(model, cfg):
     # --no-cache-idle-slots: upstream saves AND clears every idle slot on each new task when the KV is unified
     # (-kvu, i.e. more than one slot), so talking to A, then B, then A read A back from disk and wrote B out,
     # ~6 s a switch for long conversations, although the cells were already allocated. Without it they stay
-    # in their slots until the pool is actually full; the disk tier writes them in the background instead.
+    # in their slots until the pool is actually full, and the disk tier, when it is on, writes their rows as they
+    # are computed and their state when they leave.
     args += ['--cache-prompt', '--cache-ram', str(PROMPT_CACHE_RAM_MIB), '--no-cache-idle-slots',
+             '--ctx-checkpoints', str(CTX_CHECKPOINTS), '--checkpoint-min-step', str(CHECKPOINT_MIN_STEP),
              '--chat-template-kwargs', json.dumps(kwargs, separators=(',',':'))]
     if cfg.get('vision', False):
         args += ['--mmproj', str(mmproj_path(cfg, model))]

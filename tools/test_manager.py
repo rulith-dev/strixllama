@@ -518,6 +518,11 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(env['STRIX_PROMPT_CACHE_BLOCK'],str(m.PROMPT_CACHE_BLOCK_TOKENS))
         self.assertNotIn('STRIX_PROMPT_CACHE_BLOCK',m.runtime_environment(m.validate_profile({'prompt_cache_disk':False},self.model)))
 
+    def test_a_resident_conversation_keeps_its_last_checkpoints_and_a_sparse_few(self):
+        # 0.11 GB each in system RAM: the last prompt's and one per 32K tokens, not llama-server's 32 per slot
+        a=m.argv(self.model,m.validate_profile({'vision':False},self.model))
+        self.assertEqual(a[a.index('--ctx-checkpoints')+1],str(m.CTX_CHECKPOINTS));self.assertEqual(m.CTX_CHECKPOINTS,8)
+        self.assertEqual(a[a.index('--checkpoint-min-step')+1],str(m.CHECKPOINT_MIN_STEP));self.assertEqual(m.CHECKPOINT_MIN_STEP,32768)
     def test_the_disk_prompt_cache_ceiling_is_a_profile_field(self):
         env=m.runtime_environment(m.validate_profile({'prompt_cache_disk':True,'prompt_cache_disk_mib':204800},self.model))
         self.assertEqual(env['STRIX_PROMPT_CACHE_MIB'],'204800')
