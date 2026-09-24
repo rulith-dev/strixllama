@@ -70,7 +70,7 @@ class ManagerTests(unittest.TestCase):
         with self.assertRaises(ValueError):m.checked_file(outside)
         with self.assertRaises(ValueError):m.checked_file(self.second)
     def test_invalid_profiles_fail_before_launch(self):
-        for values in [{'context':999999},{'context':True},{'ubatch':1024,'batch':512},{'kv':'q8_0'}, {'flash_attention':'auto'}, {'flash_attention':True}, {'flash_attention':['on']},{'draft_min':float('nan')},{'command':'calc.exe'}]:
+        for values in [{'context':999999},{'context':True},{'ubatch':1024,'batch':512},{'kv':'q4_0'},{'kv':'Q8_0'}, {'flash_attention':'auto'}, {'flash_attention':True}, {'flash_attention':['on']},{'draft_min':float('nan')},{'command':'calc.exe'}]:
             with self.subTest(values=values),self.assertRaises(ValueError):m.validate_profile(values,self.model)
     def test_argv_keeps_paths_as_single_arguments(self):
         cfg=m.validate_profile({'mtp':False},self.model)
@@ -489,6 +489,10 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(env['STRIX_PROMPT_CACHE_BLOCK'],str(m.PROMPT_CACHE_BLOCK_TOKENS))
         self.assertNotIn('STRIX_PROMPT_CACHE_BLOCK',m.runtime_environment(m.validate_profile({'prompt_cache_disk':False},self.model)))
 
+    def test_the_kv_cache_is_f16_or_q8_0_and_reaches_both_type_flags(self):
+        for kv in m.KV_TYPES:
+            a=m.argv(self.model,m.validate_profile({'vision':False,'kv':kv},self.model))
+            self.assertEqual((a[a.index('-ctk')+1],a[a.index('-ctv')+1]),(kv,kv))
     def test_a_resident_conversation_keeps_its_last_checkpoints_and_a_sparse_few(self):
         # 0.11 GB each in system RAM: the last prompt's and one per 32K tokens, not llama-server's 32 per slot
         a=m.argv(self.model,m.validate_profile({'vision':False},self.model))

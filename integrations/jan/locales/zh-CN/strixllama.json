@@ -64,7 +64,7 @@
     "runtime": {
       "flashAttention": "Flash Attention",
       "qsa": "稀疏注意力 QSA",
-      "kv": "KV 缓存 f16",
+      "kv": "KV 缓存 {{type}}",
       "weights": "原始权重",
       "note": "该架构下稀疏注意力与 Flash Attention 始终开启，关闭任一项都会在 64K 以上上下文耗尽显存。权重按文件中的量化直接使用。"
     },
@@ -91,6 +91,12 @@
       "lengthHelp": "加载时预留的 token 容量",
       "gpuLayers": "GPU 卸载层数",
       "gpuLayersHelp": "999 表示尽可能多地卸载",
+      "kvType": "KV 缓存类型",
+      "kvTypeOption": {
+        "f16": "f16",
+        "q8_0": "q8_0（内存减半）"
+      },
+      "kvTypeHelp": "注意力键值的存储格式。q8_0 占用的内存是 f16 的一半：262144 token 时这个模型的 K/V 缓存从 6 GB 降到 3.2 GB，磁盘缓存每个 token 占的空间约为 f16 的 60%。它与 f16 的输出差异，和换一个批大小带来的差异相当。稀疏注意力的索引始终是 f16。下次加载时生效；磁盘缓存只保留用当前类型保存的对话，其余的会被删除。",
       "promptCacheDisk": "对话状态存盘",
       "promptCacheDiskHelp": "默认关闭。开启后，对话的注意力 KV 行在计算出来时写入磁盘，每行只写一次；会变化的循环状态只在对话离开内存时才写：被别的对话挤出，或卸载模型时（每次约 0.3 GB）。对话回来时直接读回，不用重新处理：173K token 的对话约 1.6 秒恢复，重新预填充则要约 3 分钟。重启后仍然有效；旧版本存下的对话会被删除。下次加载时生效。",
       "promptCacheDiskMib": "对话状态磁盘上限（MB）",
@@ -180,7 +186,7 @@
     "ubatch_gt_batch": "UBatch 不能大于 Batch",
     "context_exceeds": "上下文超过模型声明的长度",
     "kv_pool_below_context": "KV 池至少要容纳一个完整上下文的对话（{{context}} 个 token），或设为 0",
-    "kv_fixed": "当前配置固定使用 f16 KV 缓存",
+    "kv_type": "KV 缓存只能是 f16 或 q8_0",
     "flash_attention_value": "Flash Attention 应为 on 或 off",
     "draft_path": "草稿模型路径无效",
     "mmproj_path": "视觉投影模型路径无效",

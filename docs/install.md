@@ -212,6 +212,31 @@ buffer, took it to 0.04 GB); 524288 failed with "bad allocation" although the ca
 loaded server with less than 8 GiB of commit left gets a warning on the page. Measured in
 `docs/results/kv-pool-20260924.json` and `docs/results/disk-tier-v3-20260924.json`.
 
+### KV cache: f16 or q8_0
+
+*KV cache type* under Context (`kv` in a profile) stores the attention keys and values as f16, the
+default, or q8_0. q8_0 halves this model's K/V cache: at 262144 tokens 6 GiB becomes 3.2 GiB, and a
+token costs about 21 KB of GPU memory instead of 32.5 (the sparse-attention indexer, its block keys
+and the draft's cache stay f16). The disk tier stores 18 KB a token instead of 29. The output
+differs from f16's about as much as f16's own does at another batch size: mean KL divergence 0.0139
++/- 0.0007 against f16 over 12K tokens of text, where f16 at two batch sizes gives 0.0116, and the
+same top token 96.6% of the time; perplexity 3.154 against 3.117 (+/- 0.087). Prefill is 1-2% slower
+at 86K tokens (the sparse-attention kernel reads f16, so each batch dequantizes the cache into its
+layout); decode is the same within noise (median 29.3 against 29.7 ms/token over three runs, MTP
+acceptance 63% against 65%).
+
+Keys are rotated before they are quantized, as upstream does for quantized caches; values are not.
+The sparse-attention prefill kernel sums probabilities times values on the matrix cores, and those
+sums move in the last bit with the values of keys they weight by zero - the free cells after a
+conversation's last one, which hold whatever an earlier conversation left there. f16 has that too,
+and the next layer's rounding absorbs it; the inverse rotation of a rotated V spreads it over 64
+dimensions, and a conversation read back from disk then parted from the same one kept in memory.
+With V unrotated both agree token for token (the 173K/155K pair of the previous section, and every
+prompt batch of a 34K conversation by hash), at a KL divergence within the error of the rotated one.
+
+Switching the type discards the conversations the disk tier holds of the other type when the model
+next loads. Measured in `docs/results/kv-q8-20260924.json`.
+
 ### Shared GPU memory is the display driver's decision
 
 Nothing here sets it. Up to 0.1.14 the manager set `GGML_HIP_ENABLE_UNIFIED_MEMORY` and, after a

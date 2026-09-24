@@ -64,7 +64,7 @@
     "runtime": {
       "flashAttention": "Flash Attention",
       "qsa": "Sparse attention (QSA)",
-      "kv": "KV cache f16",
+      "kv": "KV cache {{type}}",
       "weights": "Original weights",
       "note": "Sparse attention and Flash Attention are always on for this architecture; turning either off runs out of memory above 64K context. Weights are used as quantised in the file."
     },
@@ -91,6 +91,12 @@
       "lengthHelp": "Token capacity reserved at load time",
       "gpuLayers": "GPU layers",
       "gpuLayersHelp": "999 offloads as many layers as fit",
+      "kvType": "KV cache type",
+      "kvTypeOption": {
+        "f16": "f16",
+        "q8_0": "q8_0 (half the memory)"
+      },
+      "kvTypeHelp": "How the attention keys and values are stored. q8_0 takes half the memory of f16: at 262144 tokens this model's K/V cache is 3.2 GB instead of 6, and the disk cache stores about 60% as much per token. Its output differs from f16's about as much as a different batch size does. The sparse-attention index stays f16 either way. Applies on the next load; the disk cache keeps only conversations saved with the type in use and removes the others.",
       "promptCacheDisk": "Keep conversation state on disk",
       "promptCacheDiskHelp": "Off by default. When on, a conversation's attention rows are written to disk once each, as they are computed, and its recurrent state - the part that changes - only when the conversation leaves memory: another conversation needs its room, or the model is unloaded (about 0.3 GB each time). When it returns it is read back instead of processed again: a 173K-token conversation in about 1.6 seconds instead of three minutes of prefill. Survives restarts; conversations saved by older versions are removed. Applies on the next load.",
       "promptCacheDiskMib": "Disk limit for conversation state (MB)",
@@ -180,7 +186,7 @@
     "ubatch_gt_batch": "UBatch cannot be larger than Batch",
     "context_exceeds": "The context is longer than the model declares",
     "kv_pool_below_context": "The KV pool must hold at least one conversation of the full context ({{context}} tokens), or be 0",
-    "kv_fixed": "This configuration keeps the KV cache at f16",
+    "kv_type": "The KV cache is f16 or q8_0",
     "flash_attention_value": "Flash Attention must be on or off",
     "draft_path": "The draft model path is invalid",
     "mmproj_path": "The vision projector path is invalid",

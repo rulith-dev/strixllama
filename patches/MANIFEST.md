@@ -434,3 +434,13 @@ No new files in the delta (42: 38 modified, 4 added); replay 42 / 42, 44 patches
 | patch | files | what |
 |---|---|---|
 | `apply_disk_v3_vision` | `server-context.cpp` | with a vision projector loaded every prompt counts as a media prompt to `server_tokens::get_tokens()`, which asserts `!has_mtmd`; version 3 of the disk tier called it to compare a prompt with the runs already written, so the server aborted ~10 s into the first long prompt whenever the disk tier and image input were both on (0.1.13, 0.1.14). It reads the text tokens, which a prompt without media has exactly as many of. The check `apply_slot_state_guard` added skipped every slot while a projector was loaded; it now skips only prompts that hold media, whose positions run ahead of their cells |
+
+## Addendum 2026-09-24: Q8_0 K/V
+
+`ggml/src/ggml-cuda/cpy.cu` joins the delta (43 files: 39 modified, 4 added); replay 43 / 43, 46 patches. Measured in
+`docs/results/kv-q8-20260924.json`.
+
+| patch | files | what |
+|---|---|---|
+| `apply_kv_q8_0` | `cpy.cu`, `ggml-cuda.cu`, `qsa.cu`, `llama-memory-hybrid-idx.cpp`, `llama-kv-cache.cpp`, `qwen4exp.cpp`, `server-task.cpp`, `.h`, `server-context.cpp` | a Q8_0 K/V cache for qwen4exp. The sparse prefill kernel (qsa3) reads K and V only through packed f16 layouts, so the graph dequantizes a Q8_0 cache into them (a Q8_0 -> f16 copy kernel) and the kernel accepts the type; the decode gather and the block-key rebuild read Q8_0 rows through the same get_rows. The indexer's keys stay f16. V is not rotated for this architecture: qsa3's matrix-core sums move in the last bit with the V of keys they weight by zero (free cells after a conversation's end, holding an earlier conversation's data), and the inverse rotation spread that far enough that a conversation read back from disk parted from the resident one. The disk tier deletes entries whose rows are another size, as it does older formats |
+| `apply_state_hash_debug` | `server-context.cpp`, `server-task.cpp` | debugging aids, off unless set: `STRIX_STATE_HASH` logs hashes of a slot's recurrent and whole state as a task starts, after every prompt batch and as a conversation leaves; `STRIX_V3_VERIFY` reads every restored run back and checks it against its name |

@@ -107,6 +107,8 @@ KV_POOL_MAX = 1048576
 # profile fields an earlier version had: a page or a saved profile that still sends one is not refused for it.
 # shared_vram forced GGML_HIP_ENABLE_UNIFIED_MEMORY, which nothing reads (see runtime_environment).
 RETIRED_FIELDS = ('shared_vram',)
+# the K/V cache types the runtime's sparse attention takes (the profile's `kv`)
+KV_TYPES = ('f16', 'q8_0')
 # a loaded server is flagged (status()['commit_low']) when Windows has less commit than this left: four
 # ~24K conversations took ~4 GB of it after the load, and two long ones keep up to ~3.5 GB of context
 # checkpoints each in RAM
@@ -148,7 +150,7 @@ ERRORS = {
     'ubatch_gt_batch': 'ubatch cannot be larger than batch',
     'context_exceeds': 'The context is longer than the model declares',
     'kv_pool_below_context': 'The KV pool must hold at least one conversation of the full context ({context} tokens), or be 0',
-    'kv_fixed': 'This configuration keeps the KV cache at f16',
+    'kv_type': 'The KV cache is f16 or q8_0',
     'flash_attention_value': 'Flash Attention must be on or off',
     'draft_path': 'The draft model path is invalid',
     'mmproj_path': 'The vision projector path is invalid',
@@ -206,6 +208,9 @@ DEFAULTS = dict(context=262144, gpu_layers=999, threads=16, batch=8192, ubatch=8
                 # 'high' is an alias the template itself folds into xhigh, and 'medium' injects
                 # nothing at all, i.e. the model's own default behaviour. Four levels is what this
                 # model actually has; offering five would be two of them doing the same thing.
+                # kv: the attention K/V cache type - f16, or q8_0 at half the memory (target K/V 6 -> 3.2 GiB at
+                # 262144 tokens) and ~60% of the disk tier's bytes per token; the sparse-attention indexer keys and
+                # the draft's cache stay f16 either way. The disk tier keeps only entries of the type in use.
                 ngram_spec=False, kv='f16', flash_attention='on', thinking='off',
                 qsa=False,
                 # parallel: server slots. More than one costs ~12 GB of compute buffers on this model
@@ -571,7 +576,7 @@ def validate_profile(raw, model):
     if cfg['ubatch'] > cfg['batch']: fail('ubatch_gt_batch')
     if model.get('context') and cfg['context'] > model['context']: fail('context_exceeds')
     if cfg['kv_pool'] and cfg['kv_pool'] < cfg['context']: fail('kv_pool_below_context', context=cfg['context'])
-    if cfg['kv'] != 'f16': fail('kv_fixed')
+    if cfg['kv'] not in KV_TYPES: fail('kv_type')
     if cfg['flash_attention'] not in ('on', 'off'): fail('flash_attention_value')
     if not isinstance(cfg['draft'], str): fail('draft_path')
     if not isinstance(cfg['mmproj'], str): fail('mmproj_path')
@@ -703,7 +708,7 @@ def argv(model, cfg):
     pool = kv_pool_cells(cfg)
     args = [str(selected_runtime(cfg)), '-m', model['path'], '-ngl', str(cfg['gpu_layers']), '-c', str(pool),
             '-b', str(cfg['batch']), '-ub', str(cfg['ubatch']), '-t', str(cfg['threads']), '--poll', '0',
-            '--fit', 'off', '-np', str(cfg.get('parallel', 1)), '-fa', cfg['flash_attention'], '-ctk', 'f16', '-ctv', 'f16', '--jinja',
+            '--fit', 'off', '-np', str(cfg.get('parallel', 1)), '-fa', cfg['flash_attention'], '-ctk', cfg['kv'], '-ctv', cfg['kv'], '--jinja',
             '--host', '127.0.0.1', '--port', str(PORT)]
     if cfg.get('parallel', 1) > 1:
         # without it the pool is split evenly and each slot would see context/parallel tokens; -kvu keeps one

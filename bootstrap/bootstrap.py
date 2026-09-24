@@ -69,6 +69,7 @@ PATCH_ORDER = [
     "apply_qsa_kb_rebuild_f16",
     "apply_disk_tier_v3",           # after apply_empty_slot_cache and the v2 tier: it adds to the server loop they patch
     "apply_slot_state_guard", "apply_disk_ckpt_step", "apply_disk_v3_vision",
+    "apply_kv_q8_0", "apply_state_hash_debug",
 ]
 
 # The ROCm SDK is installed as Python wheels, which is the only form AMD ships for Windows - the

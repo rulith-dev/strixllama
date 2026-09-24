@@ -1,0 +1,100 @@
+{
+ "date": "2026-09-24",
+ "what": "A Q8_0 K/V cache for qwen4exp (apply_kv_q8_0): memory, quality, speed, and why V is not rotated",
+ "setup": "Qwen3.8-Flash-Next UD-IQ4_XS, the manager's profile unless stated (ctx 262144, batch/ubatch 8192, MTP, sparse attention). kv=q8_0 passes -ctk q8_0 -ctv q8_0; the indexer's cache and the MTP draft's stay f16.",
+ "memory": {
+  "per_token_gpu": "f16 32.5 KiB (target K/V 24, indexer 3, block keys 3, draft 2.5); q8_0 21.25 KiB (target K/V 12.75)",
+  "target_kv_at_262144": "f16 6.0 GiB, q8_0 3.19 GiB",
+  "disk_tier_per_token": "f16 29.3 KiB (0.229 GiB for 8192 tokens), q8_0 18.0 KiB (0.141 GiB), from the writer's log",
+  "two_long_conversations_173K_155K": {
+   "default_pool_through_disk": "q8_0: min commit left 9.7 GB (f16 9.6 GB, disk-tier-v3-20260924.json)",
+   "pool_393216_both_resident": "q8_0: min commit left 3.3 GB (f16 2.6 GB, install.md)"
+  }
+ },
+ "quality": {
+  "method": "tmp/kvr/ppl_kb.py, llama-perplexity ctx 4096, ubatch 4096, 3 chunks (~12K tokens); KLD against the f16 logits (tmp/kld/f16_c4096.bin)",
+  "ppl": {
+   "f16": "3.1169 +/- 0.0858",
+   "q8_0": "3.1536 +/- 0.0870"
+  },
+  "kld_against_f16": {
+   "q8_0, K rotated (as shipped)": {
+    "mean": "0.013941 +/- 0.000669",
+    "median": 0.002053,
+    "p99": 0.191744,
+    "same_top": "96.613 +/- 0.231 %"
+   },
+   "q8_0, K and V rotated (upstream's default)": {
+    "mean": "0.013736 +/- 0.000699",
+    "median": 0.00181,
+    "p99": 0.206581,
+    "same_top": "96.645 +/- 0.230 %"
+   },
+   "q8_0, nothing rotated": {
+    "mean": "0.013868 +/- 0.000592",
+    "median": 0.002051,
+    "p99": 0.183726,
+    "same_top": "96.369 +/- 0.239 %"
+   },
+   "f16 at another ubatch (noise floor)": {
+    "mean": "0.011601 +/- 0.000546",
+    "median": 0.001605,
+    "p99": 0.17236,
+    "same_top": "96.694 +/- 0.228 %"
+   }
+  }
+ },
+ "speed_86K": {
+  "method": "tools/decode_lab.py --config base --gen 400 --gen-prefix tmp/realtext.txt --gen-prefix-chars 302000, alternating f16 / q8_0, three runs each",
+  "decode_ms_per_token": {
+   "f16": [
+    33.8,
+    29.12,
+    29.73
+   ],
+   "q8_0": [
+    29.27,
+    29.33,
+    30.52
+   ]
+  },
+  "mtp_acceptance": {
+   "f16": "65%",
+   "q8_0": "63%"
+  },
+  "prefill_86122_tokens_t_s": {
+   "f16": [
+    1011.88,
+    1003.37,
+    999.78
+   ],
+   "q8_0": [
+    990.64,
+    985.74,
+    998.47
+   ]
+  },
+  "reading": "decode the same within noise (medians 29.73 and 29.33); prefill 1-2% slower: every batch dequantizes the cache into the sparse-attention kernel's f16 layout"
+ },
+ "why_v_is_not_rotated": {
+  "symptom": "with K and V rotated (upstream's default for a quantized cache), a conversation read back from the disk tier gave slightly different answers from the same conversation kept in memory",
+  "trace": [
+   "STRIX_STATE_HASH: B's recurrent state was bitwise equal to a resident B after its prompt batches of 8192, 16384 and 24576 tokens and parted at the 1325-token batch to 25901: the first whose attention window (padded to 26112) held free cells, which in the run that had evicted A still carried A's rows",
+   "a node-by-node hash of that batch: the first node to differ is the layer-3 sparse attention (qsa3), with identical Q, K and V inputs; only its last query row (position 25900) differs, by 1-2 ulp",
+   "zeroing the freed cells makes the runs agree; zeroing only the attention cache's V does, only K or only the indexer does not; zeroing only the padding cells [25901, 26112) does",
+   "the selection is causal (no index past its query) and the dequantized V holds no value that is not finite: the last row's 4-key block [25900, 25903] carries three padding keys at probability exactly 0, and the matrix cores' P*V sum still moves in the last bit with their V",
+   "f16 shows the same 1-2 ulp difference in every attention layer and the next matmul's rounding absorbs it; a rotated V goes through the inverse rotation first, which spreads it over 64 dimensions, and at layer 23 it survives"
+  ],
+  "decision": "V unrotated for qwen4exp (llama-kv-cache.cpp), K rotated: the restored conversation agrees with the resident one batch for batch, KLD within the error of the rotated one",
+  "open": "the dependence on free cells' contents remains for every type and is absorbed today; zeroing cells as they are freed would remove it"
+ },
+ "checks": {
+  "f16_equivalence": "the 18.6K-token probe is bitwise 0.1.15 (tmp/fusion_equiv_probe.py rel16f16 vs rel15)",
+  "restore_34K_pair": "kv=q8_0, ctx 65536: B (34.1K) prefilled over A's freed cells has the recurrent state of B alone after every prompt batch, and answers the same after a restore from disk",
+  "restore_173K_155K": "kv=q8_0: A and B read back from disk answer with the same tokens and top-3 logprobs as both kept resident (kv_pool 393216)",
+  "vision_stress": "STRESS OK with kv=q8_0 and the disk tier on",
+  "truncation": "tools/truncation_test.py --fill 79000, kv=q8_0: 30/30 twice",
+  "agent": "tmp/kvr/agent_probe.py, four slots, three conversations, 40 turns, kv=q8_0: no warnings",
+  "replay": "43 / 43 files reproduced from clean upstream by 46 patches"
+ }
+}

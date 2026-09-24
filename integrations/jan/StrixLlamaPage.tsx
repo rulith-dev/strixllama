@@ -16,6 +16,8 @@ type Model = { id: string; path: string; name: string; filename: string; archite
 // The four levels this model's chat template actually has: it accepts low, medium and xhigh, folds
 // 'high' into xhigh, and injects nothing at all for medium. A fifth level would be a duplicate.
 const THINKING_LEVELS = ['off', 'low', 'medium', 'high']
+// the K/V cache types the manager takes (KV_TYPES in tools/manager.py)
+const KV_TYPES = ['f16', 'q8_0']
 // merged / merge_errors: set by a rescan, when a downloaded draft head was combined with its shared draft
 type Catalog = { models: Model[]; roots: string[]; scanned_at: string; merged?: string[]; merge_errors?: Record<string, string> }
 // what the companion switches have to work with: the draft the profile would use (null when none is
@@ -154,7 +156,7 @@ export default function StrixLlamaPage({ view }: { view: View }) {
         <p className="mt-2 break-all font-mono text-xs text-muted-foreground">{model.path}</p>
         <p className="mt-2 text-xs text-muted-foreground">{model.architecture} · {model.quant} · {gb(model.size)} · {tr('config.declaredContext', { context: model.context?.toLocaleString() || tr('config.contextUnknown') })}</p>
         {qsaSupported && <>
-          <div className="mt-3 flex flex-wrap gap-2">{[tr('config.runtime.flashAttention'), tr('config.runtime.qsa'), tr('config.runtime.kv'), tr('config.runtime.weights')].map(badge)}</div>
+          <div className="mt-3 flex flex-wrap gap-2">{[tr('config.runtime.flashAttention'), tr('config.runtime.qsa'), tr('config.runtime.kv', { type: profile?.kv || 'f16' }), tr('config.runtime.weights')].map(badge)}</div>
           <p className="mt-2 text-xs text-muted-foreground">{tr('config.runtime.note')}</p>
         </>}
       </div>}
@@ -169,6 +171,8 @@ export default function StrixLlamaPage({ view }: { view: View }) {
             {numeric(tr('config.context.length'), 'context', tr('config.context.lengthHelp'), 512, model?.context || 262144)}
             {numeric(tr('config.context.gpuLayers'), 'gpu_layers', tr('config.context.gpuLayersHelp'), 0, 999)}
           </div>
+          <label className="mt-5 flex items-center justify-between gap-4 text-sm"><span className="font-medium">{tr('config.context.kvType')}</span><select aria-label={tr('config.context.kvType')} className={selectClass} value={profile.kv || 'f16'} onChange={e => field('kv', e.target.value)}>{KV_TYPES.map(k => <option key={k} value={k}>{tr('config.context.kvTypeOption.' + k)}</option>)}</select></label>
+          <p className="mt-2 text-xs text-muted-foreground">{tr('config.context.kvTypeHelp')}</p>
           <label className="mt-5 flex items-center justify-between gap-4 text-sm"><span className="font-medium">{tr('config.context.promptCacheDisk')}</span><Switch id="prompt-cache-disk" checked={!!profile.prompt_cache_disk} onCheckedChange={v => field('prompt_cache_disk', v)} /></label>
           <p className="mt-2 text-xs text-muted-foreground">{tr('config.context.promptCacheDiskHelp')}</p>
           {profile.prompt_cache_disk && <div className="mt-4">{numeric(tr('config.context.promptCacheDiskMib'), 'prompt_cache_disk_mib', tr('config.context.promptCacheDiskMibHelp'), 1024, 262144, 1024)}</div>}

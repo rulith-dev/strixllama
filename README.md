@@ -39,7 +39,7 @@ python tools/manager.py <<< '{"op":"start","data":{"id":"<model-id>"}}'
 ```
 
 `bootstrap.py` clones `pwilkin/llama.cpp` at a pinned revision, applies the patch set, and builds
-against the ROCm SDK. The same 30-file delta is also published as one commit on a fork, so it can be
+against the ROCm SDK. The same 43-file delta is also published as one commit on a fork, so it can be
 read as a plain diff: [rulith-dev/llama.cpp, branch `strixllama`](https://github.com/rulith-dev/llama.cpp/tree/strixllama). `tools/manager.py` is a JSON-on-stdin process manager: it owns the launch
 flags, the environment gates and the runtime, so a configuration is reproducible rather than
 remembered.
@@ -56,7 +56,7 @@ Optional: `integrations/jan/apply.py` overlays three management pages into a
 
 ## What is actually in here
 
-The whole delta against upstream llama.cpp is **42 files** — 38 modified, 4 added, out of 3610. The
+The whole delta against upstream llama.cpp is **43 files** — 39 modified, 4 added, out of 3610. The
 substantial pieces:
 
 | | |
@@ -64,6 +64,7 @@ substantial pieces:
 | **IQ3_S matrix-core path** | 52% of this model's body is stored as IQ3_S, which the MMB dequant GEMM did not accept, so half the weights never reached the matrix cores. +5.6% prefill. |
 | **Expert kernels priced for this GPU** | On gfx1151 the vector units and the matrix cores never run at the same time, so every instruction a dequantizing GEMM spends unpacking weights is matrix time lost. The routed IQ3_S gate/up, prefill's largest kernel, rebuilt around that: 35.9 → 19.9 ms a layer, prefill +10%, bitwise the same output. |
 | **Sparse attention at decode** | The sparse kernel needs a packed layout only prefill builds, so a decoded token attended densely over the whole cache. Gathering the selected cells instead: 97K decode 59.0 → 49.3 ms/token, and the context slope drops from 0.188 to 0.067 ms per 1000 tokens. |
+| **A Q8_0 K/V cache, optional** | The sparse-attention kernels read f16 only, so a Q8_0 cache is dequantized into their layout each batch: at 262144 tokens the K/V cache takes 3.2 GB instead of 6, decode is unchanged and prefill 1-2% slower. f16 stays the default. |
 | **MTP speculation, tuned** | Draft head with its own IQ4_XS output projection, three draft tokens, n-gram drafting off. 85K decode 21.5 → 34.9 tok/s. |
 | **Two correctness fixes** | Speculative verification batches ran dense attention with no causal mask, so long answers drifted and stopped early. Image input aborted the server three separate ways in the QSA block machinery. |
 | **Measurement instrumentation** | Per-graph, per-dispatch and per-phase timing, all off unless an environment variable is set. |
@@ -84,12 +85,12 @@ happily if the tree was edited by hand and re-recorded afterwards. The strong qu
 recipe still rebuilds the tree from nothing, and that has its own tool:
 
 ```bash
-python tools/replay_bootstrap.py          # clean upstream + patch set == the 42 files, byte for byte
+python tools/replay_bootstrap.py          # clean upstream + patch set == the 43 files, byte for byte
 ```
 
-It restores the 38 modified files to upstream from the clone's own git objects, addressed by the blob
+It restores the 39 modified files to upstream from the clone's own git objects, addressed by the blob
 hashes in `bootstrap/UPSTREAM.json` — so clean upstream is reconstructed rather than trusted — then
-replays the snapshot and every script and compares. It reports **42 / 42**.
+replays the snapshot and every script and compares. It reports **43 / 43**.
 
 It was not always so. Five of the 24 were owned by no script at all - including the largest measured
 win in the project, which a clean rebuild would have silently dropped - and three scripts had drifted
