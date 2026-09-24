@@ -1,0 +1,193 @@
+{
+ "date": "2026-09-24",
+ "what": "Several conversations decoding at once (apply_spec_draft_by_slots), zeroed freed KV cells (apply_kv_zero_freed), the MTP drafter's carried row (apply_mtp_carry_state)",
+ "setup": "Qwen3.8-Flash-Next UD-IQ4_XS, the manager's profile unless stated (ctx 262144, batch/ubatch 8192, MTP with 3 draft tokens, sparse attention).",
+ "concurrency": {
+  "question": "four conversations decoding at once summed only ~50 tok/s: is something serial?",
+  "method": "tmp/kvr/bs_probe.py on a server started as production (tmp/kvr/with_server.py): parallel=4, kv=q8_0, kv_pool=350208, N conversations of ~20K tokens each pinned to slots and cached first, then N x 256 tokens at once with the server's default (random) sampling, three rounds; tok/s summed over the conversations, wall clock",
+  "sweep_by_draft_length": {
+   "4 streams": {
+    "d3": {
+     "rounds_tok_s": [
+      37.9,
+      42.0,
+      33.2
+     ],
+     "median": 37.9
+    },
+    "d2": {
+     "rounds_tok_s": [
+      39.9,
+      47.7,
+      42.7
+     ],
+     "median": 42.7
+    },
+    "d1": {
+     "rounds_tok_s": [
+      38.5,
+      41.1,
+      44.3
+     ],
+     "median": 41.1
+    },
+    "nomtp": {
+     "rounds_tok_s": [
+      49.0,
+      49.7,
+      49.4
+     ],
+     "median": 49.4
+    }
+   },
+   "2 streams": {
+    "d3": {
+     "rounds_tok_s": [
+      36.8,
+      35.7,
+      35.4
+     ],
+     "median": 35.7
+    },
+    "d2": {
+     "rounds_tok_s": [
+      39.9,
+      45.7,
+      35.8
+     ],
+     "median": 39.9
+    },
+    "d1": {
+     "rounds_tok_s": [
+      40.6,
+      40.1,
+      41.7
+     ],
+     "median": 40.6
+    },
+    "nomtp": {
+     "rounds_tok_s": [
+      35.0,
+      34.6,
+      34.7
+     ],
+     "median": 34.7
+    }
+   },
+   "3 streams": {
+    "d3": {
+     "rounds_tok_s": [
+      40.5,
+      37.8,
+      43.1
+     ],
+     "median": 40.5
+    },
+    "d2": {
+     "rounds_tok_s": [
+      44.7,
+      43.8,
+      46.2
+     ],
+     "median": 44.7
+    },
+    "d1": {
+     "rounds_tok_s": [
+      41.6,
+      42.3,
+      42.5
+     ],
+     "median": 42.3
+    },
+    "nomtp": {
+     "rounds_tok_s": [
+      43.1,
+      43.6,
+      43.8
+     ],
+     "median": 43.6
+    }
+   },
+   "1 streams": {
+    "d3": {
+     "rounds_tok_s": [
+      37.7,
+      39.7,
+      38.7
+     ],
+     "median": 38.7
+    },
+    "nomtp": {
+     "rounds_tok_s": [
+      21.8,
+      22.8,
+      22.3
+     ],
+     "median": 22.3
+    }
+   }
+  },
+  "reading": "with several conversations every draft length loses to no drafting at all from four on: the acceptance does not change much, the cost of a verify step does",
+  "per_pass_4_streams_3_drafts_ms": {
+   "method": "STRIX_SPEC_TIMING=1: CPU-side breakdown of one speculative pass",
+   "total": 205,
+   "verify_graph": 171,
+   "draft_batched_across_slots": 20.5,
+   "sampling_cpu": 2,
+   "other": 10
+  },
+  "verify_graph_16_tokens": {
+   "method": "STRIX_NODE_TIMING=1 with GGML_CUDA_DISABLE_GRAPHS=1 (event-bracketed dispatches)",
+   "experts_touched_per_layer": {
+    "4 tokens": 39,
+    "16 tokens": 138,
+    "of": 512
+   },
+   "expert_kernels_gb_s": "251-261 (the memory's bandwidth)",
+   "growth_4_to_16_tokens_ms": {
+    "experts": 38,
+    "gdn_state_snapshots": 12,
+    "attention_and_gather": 12,
+    "small_ops": 20
+   },
+   "reading": "a verified token costs ~10 more experts' weights, which conversations decoding together cannot share; the kernels already run at bandwidth, so the lever is fewer verified tokens"
+  },
+  "backend_sampling": "sampling in the graph (the per-request backend_sampling) was slower here, 37 against 45 tok/s summed, and accepted fewer drafts: not used",
+  "policy": {
+   "env": "STRIX_SPEC_DRAFT_BY_SLOTS=\"<draft_max>,2,2,0\" (set by the manager when MTP is on and parallel > 1)",
+   "measured_before_release_tok_s": {
+    "4 streams": 47.4,
+    "2 streams": 38.9,
+    "1 stream": 37.1
+   },
+   "note": "the draft model still processes every step (common_speculative_process), so drafting resumes as soon as fewer conversations generate; one conversation drafts as before"
+  }
+ },
+ "zeroed_freed_cells": {
+  "symptom": "the sparse-attention prefill kernel (qsa3) sums P*V on the matrix cores, and the sums move in the last bit with the V of keys weighted by exactly zero - the free cells after a conversation's last one, up to its block boundary. Those held whatever an earlier conversation or a rejected draft left there, so a result depended on the cells' history (0.1.16 kept q8_0 V unrotated because a rotated V spread that bit into a conversation read back from disk)",
+  "fix": "a cell freed by seq_rm, seq_keep, a move or clear has its K and V rows zeroed by async copies from a zero tensor kept in each cache buffer, on the graphs' stream (STRIX_KV_ZERO_FREED=0 leaves them)",
+  "proof": "q8_0 with V rotated (the case that parted before): a 34K conversation B processed over A's freed cells hashes the same as B alone after every prompt batch, and answers with the same tokens and top-3 logprobs; without zeroing the two part",
+  "cost": "about 0.5% of decode with MTP (greedy A/B, one conversation); with MTP off a fresh conversation frees nothing",
+  "v_rotation": "kept off for qwen4exp as in 0.1.16: with zeroed cells a rotated V would be safe, but the disk tier stores q8_0 conversations unrotated in rows of the same size, and the quality is the same within error (mean KLD against f16 0.013941 +/- 0.000669 K rotated, 0.013736 +/- 0.000699 both, kv-q8-20260924.json)"
+ },
+ "mtp_carried_row": {
+  "symptom": "tmp/kvr/rewind_probe.py: the same ~85K-token prompt twice, greedy, 400 tokens, MTP; the second pass rewinds to the checkpoint 4 tokens before the prompt's end. 0.1.16 and the build with zeroed cells alone: the passes part at token 133 (\" \" against \"\\n\"), draft acceptance 245/441 against 252/409 - the second step already drafted differently",
+  "cause": "the draft context pairs each token with the target's hidden row of the position before; the last row of a batch is carried to the next (pending_h). After the rewind the carried row was the one of the previous request's last position, so the draft cache's row at the rewind point differed",
+  "fix": "the row keeps its position (zeros when it does not belong, as at a fresh start); get_state/set_state put it into checkpoints (data_spec, stored by the disk tier), the RAM tier's entries, the disk tier's restore point and child slots; a restored slot file clears it",
+  "after": "both passes: the same 400 tokens, acceptance 245/441 and 245/441",
+  "note": "the probe's top-3 comparison was vacuous for speculative tokens (the server sets no probabilities on that path); the ids are what is compared"
+ },
+ "release_gates_0117": {
+  "runtime": "bin/hip-rocm101 built by bootstrap.py --build from the recipe (replay 43 / 43, 49 patches); tmp/kvr/gates_0117.sh",
+  "1_equivalence_f16_no_mtp": "18.6K-token prompt, 48 tokens: text identical to 0.1.16, no top-5 probability differs",
+  "2_q8_0_freed_cells": "B (34K) over A's freed cells against B alone: recurrent-state hashes equal after every prompt batch (8192 3e884ea85af61349 ... 34089 8153bd3cb0d83c34); B again: same tokens and top-3 logprobs",
+  "3_rewind_85K_mtp": "the same prompt twice, 400 greedy tokens: identical, acceptance 245/441 both",
+  "4_long_pair_q8_0_mtp": "173K + 155K: A again and B again read back from disk give the same tokens as with both resident",
+  "5_image_stress_q8_0_disk": "STRESS OK, 0 out-of-step warnings",
+  "6_137K_with_short_prompts_disk_vision": "0 asserts, 0 out-of-step warnings; min commit left 8.5 GB",
+  "7_allocation_failure_at_checkpoint": "retry and next turn: same tokens and top-3 logprobs as a server that never failed",
+  "8_truncation_fill_79000": "rep 1 and rep 2 reach section 30/30, both 1194 tokens, draft 757/1245 both (before the carried-row fix the second rep, a rewind, drafted differently: 881 tokens)",
+  "9_agent_40_turns_4_slots_q8_0": "no warnings",
+  "10_four_streams_20K_q8_0_policy": "rounds 46.5, 47.1, 47.2 tok/s summed, median 47.1 (no drafts at four)"
+ }
+}

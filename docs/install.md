@@ -228,14 +228,64 @@ acceptance 63% against 65%).
 Keys are rotated before they are quantized, as upstream does for quantized caches; values are not.
 The sparse-attention prefill kernel sums probabilities times values on the matrix cores, and those
 sums move in the last bit with the values of keys they weight by zero - the free cells after a
-conversation's last one, which hold whatever an earlier conversation left there. f16 has that too,
-and the next layer's rounding absorbs it; the inverse rotation of a rotated V spreads it over 64
-dimensions, and a conversation read back from disk then parted from the same one kept in memory.
-With V unrotated both agree token for token (the 173K/155K pair of the previous section, and every
-prompt batch of a 34K conversation by hash), at a KL divergence within the error of the rotated one.
+conversation's last one. Until 0.1.17 those held whatever an earlier conversation, or a rejected
+draft, left there; f16 carried that bit too, and the next layer's rounding absorbed it, but the
+inverse rotation of a rotated V spread it over 64 dimensions, and a conversation read back from disk
+then parted from the same one kept in memory. Since 0.1.17 a cell is zeroed as it is freed (see
+below), so a rotated V would now be safe; it stays unrotated because the disk tier's q8_0
+conversations are stored that way, in rows of the same size, and the quality is the same within
+error (mean KL divergence 0.0137 with V rotated too).
 
 Switching the type discards the conversations the disk tier holds of the other type when the model
 next loads. Measured in `docs/results/kv-q8-20260924.json`.
+
+### Several conversations decoding at once
+
+Speculative decoding drafts tokens that the next step verifies. For one conversation that is worth
++74% (38.7 against 22.3 tok/s at 20K tokens). With several at once it costs more than it returns: every
+verified token makes the step read the weights of about ten more of this model's 512 experts, and
+conversations decoding together cannot share them - four conversations with three draft tokens verify
+16 tokens a step, which touch ~138 experts where 4 tokens touch ~39. The expert kernels already run at
+the memory's bandwidth there (251-261 GB/s), so the only lever is to verify fewer tokens. The server
+therefore drafts `draft_max` tokens while one conversation generates, at most 2 while two or three do,
+and none from four on (`STRIX_SPEC_DRAFT_BY_SLOTS`, set by the manager when MTP is on and there is more
+than one slot). The draft model keeps processing every step, so drafting resumes as soon as fewer
+conversations generate. Summed over the conversations, ~20K tokens each, q8_0 K/V:
+
+| generating | 3 draft tokens | 2 | 1 | none | the cap |
+|---|---|---|---|---|---|
+| 1 | 38.7 | | | 22.3 | 3 |
+| 2 | 35.7 | 39.9 | 40.6 | 34.7 | 2 |
+| 3 | 40.5 | 44.7 | 42.3 | 43.6 | 2 |
+| 4 | 37.9 | 42.7 | 41.1 | 49.4 | 0 (measured 47.4 with the draft model loaded) |
+
+With speculation the random samples decide how many drafts are accepted, so single runs spread by
++/-10%; each entry is the median of three. Measured in `docs/results/concurrency-20260924.json`.
+
+### Freed cache cells are zeroed
+
+A cell of the KV cache that a conversation gives up - evicted to disk, rewound, a draft token the next
+step rejected, a run moved by the pool's re-layout - is zeroed as it is freed, by copies queued on the
+stream the graphs run on (`STRIX_KV_ZERO_FREED=0` leaves it as it was). The attention of the next
+batch reads past a conversation's last cell up to its block boundary with a weight of exactly zero, but
+the matrix cores' sums still moved in the last bit with what those cells held, so a result depended on
+who had used the cells before. It costs about 0.5% of decode with MTP (greedy A/B, one conversation);
+with MTP off a fresh conversation frees nothing, and its output is bit for bit 0.1.16's.
+
+### The draft head's carried row
+
+The MTP draft head reads each token together with the target's hidden state at the position before
+it, and the last of a batch's states is carried over to the next batch. After a rewind to a checkpoint
+(a regenerate, a template that drops the previous turn's thinking), a conversation brought back from the
+prompt cache or the disk tier, or another conversation taking the slot, the carried state was the one
+the slot had computed last - another position, or another conversation - and the draft cache's first row
+after it was computed from that. It never changed what the target generates, only which tokens were
+drafted, but the same prompt sent twice drafted differently the second time, the verify batches took
+different shapes, and greedy output parted where two tokens were nearly tied (token 133 of 400, at 85K
+tokens). Since 0.1.17 the state is kept with its position, stored with checkpoints and cached
+conversations, and zeros when it does not belong; the same prompt twice gives the same 400 tokens and
+the same acceptance. Conversations the disk tier stored before 0.1.17 have no such state: they come
+back as before, and the first draft after them starts from zeros.
 
 ### Shared GPU memory is the display driver's decision
 

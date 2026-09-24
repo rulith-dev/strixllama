@@ -6,7 +6,7 @@
   "ggml/src/ggml-cuda/strixllama-getrows-cast.cuh"
  ],
  "produces": {
-  "common/speculative.cpp": "aab538d6c13facbf32bdac85fa338b50993a65de167cfeb7b61bde78088e44b3",
+  "common/speculative.cpp": "0cf766d5d216c236015f2dc4f83ee9892546eba622042bf3b07bce8da6f166ac",
   "ggml/src/ggml-alloc.c": "6175a587a0c18b178180bda13849731ae71800a7ee463c9fbb00becdd7ab5220",
   "ggml/src/ggml-cuda/cpy.cu": "e3b2d6e5eb2182be9c105d716b48abaf5c10f9de0567bfc783e73c7b532502f1",
   "ggml/src/ggml-cuda/gdn-conv.cu": "eced61710a178ba5bc07985775e64711f82c9173cb57d05d3054c46ddaa759bb",
@@ -30,8 +30,8 @@
   "src/llama-context.cpp": "14d0dced1e69aab56d2cd6d00a55cc3688029c2f8739664285813e063cd0a3a9",
   "src/llama-graph.cpp": "210c5c387fa812b0cf6d14dfeff8d1b4484c574f233049a86c09d199977428e0",
   "src/llama-graph.h": "c4814656cea3a6f0d28c55bb9dd9f290852a394efbe65c66ce033d55921a6856",
-  "src/llama-kv-cache.cpp": "2c8168ea1ca319cb255cabc34a4201ae73382f731ddfadbd39131e8da5a3d83d",
-  "src/llama-kv-cache.h": "480dc917287ff2ba647cb4a8a0b9b2582a3e6228271b8a403d278a34edbed1f3",
+  "src/llama-kv-cache.cpp": "17a46c4f2131b421c6d3a29aac7a82f2e5766024f75c02a0326cc29c8728a675",
+  "src/llama-kv-cache.h": "e3c9ab7ffac6a8267e3dafe945fe8f196216353580a06c86e70e732857b4cfa7",
   "src/llama-kv-cells.h": "6cb735c3bee59e564be000c3c8b83e6696974aa106a081790c72d1f4e75db9f4",
   "src/llama-lazy-reader.h": "4378a2edb78f1c840526e67b7d36d585f71e49cef48502bb618804c0216f417f",
   "src/llama-memory-hybrid-idx.cpp": "021a9f5336546875e436e70c60b2349aa7aece150970d5c99eb61eb8f5079c00",
@@ -44,10 +44,10 @@
   "src/models/qwen4exp.cpp": "5a05b2de11cd4607b0c42f76f68528636fe470d23523e148baa7fd203ec549ad",
   "src/prefix.h": "8ff0afa90c0f8a93411faf13de1d989ee8b8877518be15fcb40d31c464dc4afa",
   "tests/test-backend-ops.cpp": "63b40d1aa142a62032da8bab47b53513b688fe8a18b6980ac07300f672c007c0",
-  "tools/server/server-context.cpp": "cf795f9e038b80a75978f6f7634b1cbdf52e58c9165b3399072c05053e8e8077",
+  "tools/server/server-context.cpp": "3cc5e88460141d66d6536ec33913e66a93a4289e40760de8049b1a5099792d04",
   "tools/server/server-context.h": "9961ba75727e421993b1a4be35900487bd4b527e5b85c6b6496b852d17172f3c",
-  "tools/server/server-task.cpp": "a1256c7a0a1ee556932bdc143d0ca8a9d3ed3f8ec8068d5e53ccde5b15b1963a",
-  "tools/server/server-task.h": "8f99fdfc39fd97ac9235114e119486d9d7671624e112407840bb63261e81bd04",
+  "tools/server/server-task.cpp": "ffd6df6d7135c3f56309d42132d155a2b54eaa43c3c3701a146393301a379d6a",
+  "tools/server/server-task.h": "9ff480cad8053af04747aca4c2304b672f6148c4d2c192b8ef6fe2529a98a5b3",
   "tools/server/server.cpp": "5e2e8284457fac873a7871bb0201e0e17494025213b0be50cfeb02be2f377daa"
  },
  "repo": "https://github.com/pwilkin/llama.cpp",

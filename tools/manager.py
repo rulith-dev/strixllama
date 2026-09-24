@@ -699,6 +699,15 @@ def runtime_environment(cfg):
         env['STRIX_PROMPT_CACHE_DIR'] = str(DATA / 'prompt-cache')
         env['STRIX_PROMPT_CACHE_MIB'] = str(cfg.get('prompt_cache_disk_mib') or PROMPT_CACHE_DISK_MIB)
         env['STRIX_PROMPT_CACHE_BLOCK'] = str(PROMPT_CACHE_BLOCK_TOKENS)
+    # A draft pays for itself on one conversation, not on several at once: each drafted token is verified, and
+    # in this mixture of experts a verified token reads ~10 more experts' weights, which conversations decoding
+    # together cannot share. So the server drafts draft_max tokens for one generating slot, at most 2 for two
+    # or three, none from four on (STRIX_SPEC_DRAFT_BY_SLOTS). Measured at ~20K tokens each, tok/s summed over
+    # the conversations, three draft tokens against the cap: 38.7 alone (unchanged), 35.7 -> ~40 for two,
+    # 40.5 -> 44.7 for three, 37.9 -> 49.4 for four.
+    if cfg.get('mtp') and cfg.get('parallel', 1) > 1:
+        dm = int(cfg['draft_max'])
+        env['STRIX_SPEC_DRAFT_BY_SLOTS'] = ','.join(str(x) for x in (dm, min(dm, 2), min(dm, 2), 0))
     if not bundled_rocm():
         env['PATH'] = str(ROCM_BIN) + os.pathsep + os.environ.get('PATH', '')
     return env
