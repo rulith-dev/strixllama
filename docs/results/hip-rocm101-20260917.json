@@ -254,7 +254,8 @@
   },
   "winner": "GGML_HIP_ENABLE_UNIFIED_MEMORY=0: +4.2% prefill and the run-to-run spread drops from +/-24.11 to +/-3.71. One env var, no code. Adopted in tools/manager.py.",
   "overlapped_reader_verdict": "the depth-16 gather is NOT a prefill win - 884.97 against 903.64 with unified off, i.e. slightly negative. It is worth +3.1% on decode (24.40 +/- 0.38 vs 23.66 +/- 0.22, error bars do not overlap) and it cuts the per-token decode gather from a 3.0 ms median to 0.8 ms, which also removes jitter. Gather time fell 26-38% on prefill without moving throughput, so the gather was not on the critical path: qwen4exp_ple_prefetch (detached thread, warms the cache one batch ahead) was already hiding it.",
-  "retracted": "an earlier +9% claim for the overlapped reader compared a 3-rep run against a single-rep 810.82 baseline. The honest 3-rep baseline is 867-904. Never compare across different rep counts."
+  "retracted": "an earlier +9% claim for the overlapped reader compared a 3-rep run against a single-rep 810.82 baseline. The honest 3-rep baseline is 867-904. Never compare across different rep counts.",
+  "retracted_20260924": "No code in the runtime reads GGML_HIP_ENABLE_UNIFIED_MEMORY: ggml reads only GGML_CUDA_ENABLE_UNIFIED_MEMORY (for being set at all) and the HIP runtime reads neither - checked in the source and in every DLL of the release. The unified0 and unified1 arms ran the same program; their difference was run-to-run variation. The manager stops setting it in 0.1.15."
  },
  "ssd_ceiling_20260917": {
   "tool": "tools/ssd_random_read.py (buffered reads against the model GGUF, server unloaded)",

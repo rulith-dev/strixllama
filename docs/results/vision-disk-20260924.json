@@ -1,0 +1,146 @@
+{
+ "date": "2026-09-24",
+ "what": "0.1.15: the disk tier with a vision projector loaded; the slot check with a projector loaded; the unified-memory variable nothing reads",
+ "setup": "Qwen3.8-Flash-Next UD-IQ4_XS, the manager's profile (ctx 262144, batch/ubatch 8192, MTP, sparse attention, image input on), one slot unless stated, 96 GB carve, commit limit 127.6 GiB (31.6 GiB RAM + 96 GiB page file). Memory from the \"GPU Process Memory\" counters Task Manager uses (tmp/gpumem.py, tmp/kvr/shared_probe.py), sampled every second; the conversation is 470000 characters of tmp/kvr/twolong_text_20260924.txt (137,267 tokens).",
+ "crash": {
+  "where": "tools/server/server-common.cpp:564 GGML_ASSERT(!has_mtmd) in server_tokens::get_tokens()",
+  "when": "0.1.13 and 0.1.14 with the disk tier and image input both on: ~10 s into the first long prompt (the first run of 4096 positions handed to the store), or at the first switch of conversations (the leaving write)",
+  "why": "with a projector loaded every server_tokens has has_mtmd set, media in it or not; persist_runs compared the prompt with its runs through get_tokens(). It now reads get_text_tokens(), after checking that the prompt holds no media (it already did).",
+  "who": "a profile saved before 0.1.13 carries prompt_cache_disk true and vision true, both defaults then; the profile on this machine does"
+ },
+ "slot_check": "apply_slot_state_guard compared a slot's tokens with its memory before a prompt batch only when has_mtmd was false, i.e. never with a projector loaded (the default profile). It now skips only prompts that hold media; no false alarm over a 137K prompt, the image stress test, or the switches below.",
+ "unified_memory_variable": {
+  "finding": "nothing reads GGML_HIP_ENABLE_UNIFIED_MEMORY: ggml reads GGML_CUDA_ENABLE_UNIFIED_MEMORY (getenv != nullptr, so any value turns it on) and the HIP runtime neither; checked in the source and, ASCII and UTF-16, in all 32 DLLs of the release plus System32's amdhip64*.dll",
+  "consequence": "the manager's reload \"in shared memory\" after an out-of-memory exit ran the same program again, and the +4.2% prefill credited to =0 (docs/results.md) was run-to-run variation; 0.1.15 sets neither variable and retires the profile field shared_vram"
+ },
+ "memory_during_a_137k_prompt": {
+  "note": "GiB of the server process; 0.1.10's runtime has 0.1.8's compute-buffer behaviour (the reallocation fixed in 0.1.11) and its disk tier on, as the issue #1 reporter ran it",
+  "0.1.10_runtime": {
+   "dedicated_after_load": 76.69,
+   "dedicated_during_prompt": [
+    76.69,
+    77.7,
+    77.89,
+    81.18,
+    84.49,
+    84.55,
+    84.57
+   ],
+   "shared_after": 1.64,
+   "private_after": 87.71,
+   "commit_peak": 127.63,
+   "log": "prompt_save: disk cache: not enough memory to gather 4044.525 MiB of state (twice); an earlier run of the same probe failed the prompt at 57344 tokens with \"decode() failed: bad allocation\""
+  },
+  "0.1.14": {
+   "dedicated_after_load": 76.89,
+   "dedicated_during_prompt": [
+    76.89,
+    77.91,
+    78.09,
+    78.15,
+    78.17
+   ],
+   "shared_after": 1.51,
+   "private_after": 81.16,
+   "commit_peak": 120.66,
+   "after_a_restart_and_the_same_prompt_again": {
+    "dedicated": 78.17,
+    "shared": 1.83
+   }
+  },
+  "reading": "the two ~3.3 GiB steps are the target compute buffer reallocated as the attention window grows; the freed one keeps its commit until the process exits. Here they stay in the carve; the reporter saw shared GPU memory climb to its 15.8 GB limit instead, where they also take system RAM."
+ },
+ "one_slot_long_and_short": {
+  "workload": "137K-token prompt, a follow-up, then twice: a 543-token unrelated prompt on the same slot and the long conversation again (tmp/kvr/shared_probe.py --switch 2)",
+  "0.1.14_disk_tier_off": {
+   "long": {
+    "processed": 137267,
+    "cached": 137267,
+    "prefill_s": 146.5,
+    "total_s": 147
+   },
+   "follow": {
+    "processed": 17,
+    "cached": 137284,
+    "prefill_s": 0.3,
+    "total_s": 1
+   },
+   "short1": {
+    "processed": 528,
+    "cached": 543,
+    "prefill_s": 1.1,
+    "total_s": 2
+   },
+   "back1": {
+    "processed": 137287,
+    "cached": 137287,
+    "prefill_s": 141.9,
+    "total_s": 142
+   },
+   "short2": {
+    "processed": 4,
+    "cached": 543,
+    "prefill_s": 0.1,
+    "total_s": 1
+   },
+   "back2": {
+    "processed": 137288,
+    "cached": 137288,
+    "prefill_s": 143.2,
+    "total_s": 143
+   }
+  },
+  "0.1.14_disk_tier_on": "aborted 10 s into the first prompt (the crash above)",
+  "0.1.15_disk_tier_on": {
+   "long": {
+    "processed": 137267,
+    "cached": 137267,
+    "prefill_s": 147.1,
+    "total_s": 147
+   },
+   "follow": {
+    "processed": 17,
+    "cached": 137284,
+    "prefill_s": 0.4,
+    "total_s": 1
+   },
+   "short1": {
+    "processed": 528,
+    "cached": 543,
+    "prefill_s": 1.1,
+    "total_s": 2
+   },
+   "back1": {
+    "processed": 3,
+    "cached": 137287,
+    "prefill_s": 0.1,
+    "total_s": 2
+   },
+   "short2": {
+    "processed": 4,
+    "cached": 543,
+    "prefill_s": 0.1,
+    "total_s": 1
+   },
+   "back2": {
+    "processed": 1,
+    "cached": 137288,
+    "prefill_s": 0.1,
+    "total_s": 2
+   }
+  },
+  "0.1.15_restores": [
+   {
+    "tokens": 137284,
+    "gib": 3.939,
+    "ms": 1459
+   },
+   {
+    "tokens": 137287,
+    "gib": 3.94,
+    "ms": 1346
+   }
+  ]
+ },
+ "gates": "== 1. equivalence, 18.6K prompt, against 0.1.14\nfused paths that fired: ['MMB_TALL(wide 384x64) dense M=320 K=10240 T=8192 type=q8_0', 'HC_GATEMIX f\nrel15: 48 tokens, rel14: 48 tokens\ntext identical: True\nfirst token that differs: None\nfirst top-5 probability that differs: None\n== 2. image stress, disk tier off (production profile)\nprod loaded in 45s with image input\n['  turn5      ok   2.3s prompt=14367  The circle in the image is red.', '  turn6      ok   2.2s prompt=15403  The circle in the image is red.', '  turn7      ok   2.3s prompt=16440  The circle in the image is red.', '  branch1    ok   0.8s prompt=15431  The triangle is green.', '  branch2    ok   0.8s prompt=15431  The square is blue.', 'STRESS OK  (the image holds a red circle, a green triangle and a blue square)']\nserver alive: True\n== 3. image stress, disk tier on\n  branch1    ok   0.5s prompt=15431  The triangle is green.\n  branch2    ok   0.5s prompt=15431  The square is blue.\nSTRESS OK  (the image holds a red circle, a green triangle and a blue square)\n   out-of-step warnings: 0\n== 4. one slot, disk tier on, image input on: a 137K conversation with short prompts in between\nserver: D:/Work/strixllama\\bin/hip-rocm101\\llama-server.exe | disk tier on | env \nlong     slot 0: 137267 prompt tokens processed, 137267 cached, prefill 147.1 s, 147 s in all | \nfollow   slot 0:     17 prompt tokens processed, 137284 cached, prefill 0.4 s, 1 s in all | \nshort1   slot 0:    528 prompt tokens processed,    543 cached, prefill 1.1 s, 2 s in all |   <think> The user wants me to write a title of at\nback1    slot 0:      3 prompt tokens processed, 137287 cached, prefill 0.1 s, 2 s in all | \nshort2   slot 0:      4 prompt tokens processed,    543 cached, prefill 0.1 s, 1 s in all |   <think> The user wants me to write a title of at\nback2    slot 0:      1 prompt tokens processed, 137288 cached, prefill 0.1 s, 2 s in all | \nphase    dedicated first/max/last  shared first/max/last private max/last     commit max   RAM min\nload       0.10  76.89  76.89     0.01   1.16   1.16    79.99  79.99    118.0/127.6    11.5\nloaded    76.89  76.89  76.89     1.16   1.16   1.16    79.99  79.99    117.8/127.6    11.5\nlong      76.89  78.17  78.17     1.47   1.51   1.51    81.44  81.44    119.8/127.6    10.4\nidle      78.17  78.17  78.17     1.51   1.51   1.51    81.14  81.14    119.2/127.6    10.7\nidle2     78.17  78.17  78.17     1.51   1.51   1.51    81.39  81.39    119.5/127.6    10.5\nshort1    78.17  78.17  78.17     1.51   1.51   1.51    81.44  80.92    119.5/127.6    10.4\nback1     78.17  78.17  78.17     1.83   1.83   1.83    81.88  81.88    119.9/127.6    10.0\nidle_s1   78.17  78.17  78.17     1.83   1.83   1.83    81.56  81.56    119.6/127.6    10.3\nshort2    78.17  78.17  78.17     1.83   1.83   1.83    81.32  81.32    119.4/127.6    10.5\nback2     78.17  78.17  78.17     1.83   1.83   1.83    81.53  81.42    119.6/127.6    10.3\nidle_s2   78.17  78.17  78.17     1.83   1.83   1.83    81.31  81.31    119.4/127.6    10.6\n   asserts: 0, out-of-step warnings: 0\n== 5. an allocation failure at a checkpoint, image input on\nfirst  ERROR 500 {\"error\":{\"code\":500,\"message\":\"got exception: bad allocation\",\"type\":\"server_error\"}}\nretry   18636 processed,  18683 cached |     <think> The user is asking me to summarize wha\nnext        7 processed,  18670 cached |   <think> The user is asking me to summarize what \nfirst   18636 processed,  18683 cached |     <think> The user is asking me to summarize wha\nretry       4 processed,  18683 cached |     <think> The user is asking me to summarize wha\nnext        7 processed,  18670 cached |   <think> The user is asking me to summarize what \n   retry same tokens and top-3 logprobs as a server that never failed: True\n   next same tokens and top-3 logprobs as a server that never failed: True\n== done\n"
+}

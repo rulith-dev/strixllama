@@ -36,8 +36,7 @@ full prefill, **on a freshly started server** (see the image note below — that
 For reference, the same model in LM Studio on this machine decodes at about 18 tok/s.
 
 The first run of each group is a warm-up: 29.45 against 28.25 twice, 27.47 against 26.4 twice. The
-prefill figures need no such caveat — runs land within 1% of each other, which is what
-`GGML_HIP_ENABLE_UNIFIED_MEMORY=0` bought.
+prefill figures need no such caveat — runs land within 1% of each other.
 
 The prefill row is 0.1.9's, measured 2026-09-23, each run on a fresh server:
 `tools/decode_lab.py --config dectime --words 700 --n 4 --gen 16 --gen-prefix <text> --gen-prefix-chars 340000`,
@@ -106,12 +105,14 @@ only prefill's layout supported, so a single decoded token fell back to reading 
 | | |
 |---|---|
 | IQ3_S reaching the matrix cores | 830.6 → **876.7 t/s** (+5.6%), quality unchanged |
-| `GGML_HIP_ENABLE_UNIFIED_MEMORY=0` | 867.1 → 903.6 t/s (+4.2%), and run-to-run spread collapses 6× |
+| ~~`GGML_HIP_ENABLE_UNIFIED_MEMORY=0`~~ | retracted: nothing reads this variable (below) |
 | overlapped PLE gather (depth 1 → 16) | gather 3.08 → 2.28 s, but end-to-end a wash: a detached prefetch thread was already hiding it |
 
-The unified-memory switch was the largest prefill win of its day and is not a code change: with it
-on, allocations spill into shared GPU memory while the carve still has room, and shared memory is
-the same system RAM the PLE page cache needs.
+**Retracted 2026-09-24.** The struck row credited +4.2% (867.1 → 903.6 t/s) and a six times
+steadier prefill to `GGML_HIP_ENABLE_UNIFIED_MEMORY=0`, and the manager set it on every load until
+0.1.14. No code in the runtime reads it: ggml reads only `GGML_CUDA_ENABLE_UNIFIED_MEMORY`, and the
+HIP runtime neither - checked in the source and in every DLL the release ships. Both arms of that
+comparison ran the same program, so the gap was run-to-run variation; 0.1.15 stops setting it.
 
 **Where prefill time goes (2026-09-23).** Per 8192-token ubatch the GPU time is ~7.6 s near the
 start and ~9.2 s at 73K: sparse attention keeps depth cheap. Of the 7.6 s, the routed experts are

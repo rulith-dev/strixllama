@@ -171,13 +171,18 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(cfg['thinking'],'high');self.assertNotIn('ngram_cpu',cfg);self.assertEqual(cfg['context'],8192)
         # and sends it straight back: an earlier version's field must not make the whole profile unknown
         self.assertEqual(m.validate_profile({**cfg,'mtp':False},model)['context'],8192)
-    def test_shared_memory_is_off_first_and_a_forced_profile_turns_it_on(self):
-        with patch.object(m,'dedicated_vram_bytes',return_value=96*2**30):
-            cfg=m.validate_profile({'mtp':False},self.model)
-            self.assertFalse(m.unified_memory(self.model,cfg))
-            self.assertEqual(m.runtime_environment(cfg,False)['GGML_HIP_ENABLE_UNIFIED_MEMORY'],'0')
-            self.assertEqual(m.runtime_environment(cfg,True)['GGML_HIP_ENABLE_UNIFIED_MEMORY'],'1')
-            self.assertTrue(m.unified_memory(self.model,m.validate_profile({'mtp':False,'shared_vram':True},self.model)))
+    def test_no_unified_memory_variable_is_set_or_inherited(self):
+        # up to 0.1.14 the manager set GGML_HIP_ENABLE_UNIFIED_MEMORY, which nothing reads; ggml reads only
+        # GGML_CUDA_ENABLE_UNIFIED_MEMORY, and any value of it - "0" too - turns managed memory on
+        cfg=m.validate_profile({'mtp':False},self.model)
+        with patch.dict(m.os.environ,{'GGML_HIP_ENABLE_UNIFIED_MEMORY':'1','GGML_CUDA_ENABLE_UNIFIED_MEMORY':'0'}):
+            env=m.runtime_environment(cfg)
+        self.assertFalse([k for k in env if 'UNIFIED_MEMORY' in k.upper()])
+    def test_a_profile_saved_with_the_retired_shared_vram_field_still_loads(self):
+        cfg=m.validate_profile({'mtp':False,'shared_vram':True},self.model)
+        self.assertNotIn('shared_vram',cfg)
+        with self.assertRaises(m.ManagerError) as caught:m.validate_profile({'mtp':False,'no_such_field':1},self.model)
+        self.assertEqual(caught.exception.code,'unknown_field')
     def running(self,alive,dedicated=64*2**30):
         """The launch fixture: a fake runtime, no listener on 8080, and process_identity answering
         from `alive` - a queue whose last entry repeats, so [None, ident] is one dead check and
@@ -208,60 +213,28 @@ class ManagerTests(unittest.TestCase):
             # still loading: nothing to say about commit yet
             with patch.object(m,'commit_bytes',return_value=(128<<30,1<<30)):
                 self.assertNotIn('commit_low',m.status())
-    def test_out_of_memory_falls_back_to_shared_memory_once_and_is_remembered(self):
+    def test_out_of_memory_is_reported_not_retried(self):
         model=first_model()
         ident={'pid':123,'exe':str(m.RUNTIME.resolve()),'birth':456}
         alive=[ident]
         stack,popen=self.running(alive)
         with stack:
             first=m.handle('start',{'id':model['id'],'profile':{'mtp':False}})
-            self.assertEqual(popen.call_args.kwargs['env']['GGML_HIP_ENABLE_UNIFIED_MEMORY'],'0')
-            self.assertFalse(first['unified']);self.assertIn('shared memory=off',Path(first['log']).read_text())
-            # the load dies of out-of-memory in the dedicated carve; the relaunched process lives
+            self.assertNotIn('unified',first);self.assertNotIn('shared memory=',Path(first['log']).read_text())
             with open(first['log'],'a') as f:f.write('ggml_backend_cuda_buffer_type_alloc_buffer: allocating 3488.00 MiB on device 0: cudaMalloc failed: out of memory\n')
-            alive[:]=[None,ident]
-            status=m.status()
-            self.assertEqual(popen.call_count,2)
-            self.assertEqual(popen.call_args.kwargs['env']['GGML_HIP_ENABLE_UNIFIED_MEMORY'],'1')
-            self.assertEqual((status['status'],status['notice'],status['unified']),('loading','shared_vram_fallback',True))
-            self.assertNotIn('failure',status)
-            alive[0]=ident
-            self.assertEqual(m.status()['notice'],'shared_vram_fallback')
-            self.assertEqual(popen.call_count,2)
-            # remembered: the next load of this model, at this carve, with this profile, starts in shared memory
-            m.handle('stop',{})
-            m.handle('start',{'id':model['id'],'profile':{'mtp':False}})
-            self.assertEqual(popen.call_args.kwargs['env']['GGML_HIP_ENABLE_UNIFIED_MEMORY'],'1')
-            m.handle('stop',{})
-            # ...but a different carve, or a profile that takes different memory, is tried afresh
-            with patch.object(m,'dedicated_vram_bytes',return_value=96*2**30):
-                m.handle('start',{'id':model['id'],'profile':{'mtp':False}})
-            self.assertEqual(popen.call_args.kwargs['env']['GGML_HIP_ENABLE_UNIFIED_MEMORY'],'0')
-            m.handle('stop',{})
-            m.handle('start',{'id':model['id'],'profile':{'mtp':False,'context':4096}})
-            self.assertEqual(popen.call_args.kwargs['env']['GGML_HIP_ENABLE_UNIFIED_MEMORY'],'0')
-            m.handle('stop',{})
-    def test_a_death_in_shared_memory_is_reported_not_retried(self):
-        model=first_model()
-        ident={'pid':123,'exe':str(m.RUNTIME.resolve()),'birth':456}
-        alive=[ident]
-        stack,popen=self.running(alive)
-        with stack:
-            first=m.handle('start',{'id':model['id'],'profile':{'mtp':False,'shared_vram':True}})
-            self.assertTrue(first['unified'])
-            with open(first['log'],'a') as f:f.write('llama_kv_cache: failed to allocate buffer for kv cache\n')
             alive[0]=None
             status=m.status()
+            # the same load again would run out the same way: it is reported, and nothing is started
             self.assertEqual(popen.call_count,1)
-            self.assertEqual(status['status'],'stopped');self.assertIn('failed to allocate',status['failure'])
+            self.assertEqual(status['status'],'stopped');self.assertIn('out of memory',status['failure'])
+            self.assertNotIn('notice',status)
             # a plain exit - the app closing takes the server with it - is not a failure to report
             m.handle('stop',{});alive[0]=ident
-            second=m.handle('start',{'id':model['id'],'profile':{'mtp':False}})
+            m.handle('start',{'id':model['id'],'profile':{'mtp':False}})
             alive[0]=None
             self.assertNotIn('failure',m.status())
             m.handle('stop',{})
             self.assertNotIn('exited',m.read_json(m.DATA/'process.json',{}))
-            self.assertNotIn('shared memory=on',Path(second['log']).read_text())
     def test_installed_layout_needs_no_sdk_directory_and_no_path_entry(self):
         # tools/make_runtime_bundle.py puts the ROCm DLLs beside llama-server
         with patch.object(m,'ROCM_BIN',self.root/'nowhere'):
@@ -501,8 +474,6 @@ class ManagerTests(unittest.TestCase):
             self.assertNotIn('--kv-unified-per-slot',args)
         with self.assertRaises(m.ManagerError) as caught:m.validate_profile({'parallel':4,'vision':False,'kv_pool':1000},self.model)
         self.assertEqual(caught.exception.code,'kv_pool_below_context')
-        # the pool decides the load's memory, so a load that ran out of it is not remembered for another size
-        self.assertNotEqual(m.memory_fingerprint(cfg),m.memory_fingerprint(dict(cfg,kv_pool=0)))
     def test_disk_prompt_cache_is_a_switch_that_sets_the_server_environment(self):
         # off unless asked for: nothing goes to the SSD by default
         self.assertIs(m.validate_profile({'mtp':False},self.model)['prompt_cache_disk'],False)

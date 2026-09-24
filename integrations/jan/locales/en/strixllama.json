@@ -25,7 +25,6 @@
     "loading": "Loading the model. Progress appears in the developer log.",
     "loaded": "Model loaded.",
     "unloaded": "Model unloaded, memory released.",
-    "sharedVramFallback": "The dedicated carve ran out, so the model was loaded again in shared memory. This is slower than fitting entirely in dedicated memory.",
     "saved": "Settings saved. The running instance keeps its parameters; they apply on the next load.",
     "headMerged": "Draft head combined with the shared draft: {{files}}. It is now the preferred draft."
   },

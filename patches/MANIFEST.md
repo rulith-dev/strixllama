@@ -425,3 +425,12 @@ No new files in the delta (42: 38 modified, 4 added); replay 42 / 42, 43 patches
 
 With them the manager passes `--ctx-checkpoints 8 --checkpoint-min-step 32768`: a resident conversation keeps its
 last prompt's checkpoints and one per 32K tokens, at most 0.9 GB of system RAM a slot instead of 3.5.
+
+## Addendum 2026-09-24: 0.1.15
+
+No new files in the delta (42: 38 modified, 4 added); replay 42 / 42, 44 patches. Measured in
+`docs/results/vision-disk-20260924.json`.
+
+| patch | files | what |
+|---|---|---|
+| `apply_disk_v3_vision` | `server-context.cpp` | with a vision projector loaded every prompt counts as a media prompt to `server_tokens::get_tokens()`, which asserts `!has_mtmd`; version 3 of the disk tier called it to compare a prompt with the runs already written, so the server aborted ~10 s into the first long prompt whenever the disk tier and image input were both on (0.1.13, 0.1.14). It reads the text tokens, which a prompt without media has exactly as many of. The check `apply_slot_state_guard` added skipped every slot while a projector was loaded; it now skips only prompts that hold media, whose positions run ahead of their cells |

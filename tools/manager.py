@@ -32,8 +32,6 @@ HIP_GATES = dict(
     LLAMA_HC_CN_SHAPE=1, LLAMA_HC_GATEMIX=1, LLAMA_HC_MIX_FUSE=1, LLAMA_HC_BLK16=1,
     LLAMA_HC_RES16=1, LLAMA_HC_PACK_DI=1,
     LLAMA_NORM_GATED=1, LLAMA_NORM_ROWS=1, LLAMA_IDX_RELU_SUM=1, LLAMA_PLE_CONV=1, LLAMA_GDN_CONV=1,
-    # GGML_HIP_ENABLE_UNIFIED_MEMORY is not here: it follows the profile's shared_vram switch,
-    # set in runtime_environment().
     # The MTP draft context copies the target's batch sizes, so its compute buffers grow with the
     # target ubatch: at ctx 262144 / ubatch 8192 it asks for 3488 MiB and the load dies with
     # "cudaMalloc failed: out of memory". Capping the draft alone keeps both (patches/apply_spec_draft_ubatch.py).
@@ -106,6 +104,9 @@ CHECKPOINT_MIN_STEP = 32768
 # the largest KV pool a profile may ask for (kv_pool): four full-length conversations. What actually fits is the
 # GPU carve and the commit limit's business; this only stops a typo from asking for terabytes
 KV_POOL_MAX = 1048576
+# profile fields an earlier version had: a page or a saved profile that still sends one is not refused for it.
+# shared_vram forced GGML_HIP_ENABLE_UNIFIED_MEMORY, which nothing reads (see runtime_environment).
+RETIRED_FIELDS = ('shared_vram',)
 # a loaded server is flagged (status()['commit_low']) when Windows has less commit than this left: four
 # ~24K conversations took ~4 GB of it after the load, and two long ones keep up to ~3.5 GB of context
 # checkpoints each in RAM
@@ -177,8 +178,8 @@ ERRORS = {
 FAILURES = {'oom': 'The GPU ran out of memory', 'error': 'The model process exited with an error'}
 # The defaults are the measured configuration (docs/results.md), not a cautious one: context
 # 262144, batch and ubatch 8192, flash attention on, and - per model, in profile() - sparse
-# attention and MTP. A carve this does not fit is handled by the shared-memory fallback
-# (unified_memory), so a first load succeeds either way and a fitting one is as fast as claimed.
+# attention and MTP. On a carve this does not fit, the display driver places what is left in shared GPU
+# memory by itself (measured at 64 GB: docs/results.md), slower but loaded.
 DEFAULTS = dict(context=262144, gpu_layers=999, threads=16, batch=8192, ubatch=8192,
                 # draft_max=3: swept again 2026-09-19 with the cheaper draft head, at 85K on real prose.
                 # A fourth position costs 18.5 ms of an 86 ms pass (7.4 draft step + 11.2 target verify,
@@ -206,10 +207,7 @@ DEFAULTS = dict(context=262144, gpu_layers=999, threads=16, batch=8192, ubatch=8
                 # nothing at all, i.e. the model's own default behaviour. Four levels is what this
                 # model actually has; offering five would be two of them doing the same thing.
                 ngram_spec=False, kv='f16', flash_attention='on', thinking='off',
-                # shared_vram: force GGML_HIP_ENABLE_UNIFIED_MEMORY on. False means automatic, see
-                # unified_memory(): a load first tries the dedicated carve alone, which is faster
-                # and far steadier, and falls back to shared memory only when that runs out.
-                qsa=False, shared_vram=False,
+                qsa=False,
                 # parallel: server slots. More than one costs ~12 GB of compute buffers on this model
                 # (measured 13.1 GB of shared GPU memory at 4 slots against 1.1 GB at one): the worst-case
                 # graph reserve uses a mixed-sequence ubatch, which fails QSA's single-sequence visibility
@@ -557,13 +555,14 @@ def profile(model):
 
 
 def validate_profile(raw, model):
+    if isinstance(raw, dict): raw = {k: v for k, v in raw.items() if k not in RETIRED_FIELDS}
     if not isinstance(raw, dict) or set(raw) - set(DEFAULTS): fail('unknown_field')
     cfg = {**profile(model), **raw}
     bounds = dict(context=(512,262144), gpu_layers=(0,999), threads=(1,32), batch=(32,32768), ubatch=(32,32768), draft_max=(1,8), parallel=(1,8),
                   prompt_cache_disk_mib=(1024,262144), kv_pool=(0,KV_POOL_MAX))
     for field, (low, high) in bounds.items():
         if type(cfg[field]) is not int or not low <= cfg[field] <= high: fail('out_of_range', field=field, low=low, high=high)
-    for field in ('mtp', 'ngram_spec', 'qsa', 'shared_vram', 'trunk_decode_q6k', 'vision', 'prompt_cache_disk'):
+    for field in ('mtp', 'ngram_spec', 'qsa', 'trunk_decode_q6k', 'vision', 'prompt_cache_disk'):
         if type(cfg[field]) is not bool: fail('not_boolean', field=field)
     # thinking was a switch before it was a level; a profile saved back then still loads
     if type(cfg['thinking']) is bool: cfg['thinking'] = 'high' if cfg['thinking'] else 'off'
@@ -642,11 +641,6 @@ def dedicated_vram_bytes():
     return best
 
 
-def memory_fingerprint(cfg):
-    """The profile fields that decide how much device memory a load takes."""
-    return {k: cfg.get(k) for k in ('context', 'batch', 'ubatch', 'parallel', 'gpu_layers', 'mtp', 'draft', 'vision', 'mmproj', 'trunk_decode_q6k', 'kv_pool')}
-
-
 def kv_pool_cells(cfg):
     """The cells of the KV pool a load allocates: the context, or with several slots the kv_pool setting when it
     is larger, rounded up to the 256 cells llama.cpp pads the pool to."""
@@ -654,31 +648,6 @@ def kv_pool_cells(cfg):
     if cfg.get('parallel', 1) > 1 and cfg.get('kv_pool', 0) > pool:
         pool = (cfg['kv_pool'] + 255) // 256 * 256
     return pool
-
-
-def unified_memory(model, cfg):
-    """Whether this load runs with GGML_HIP_ENABLE_UNIFIED_MEMORY.
-
-    Off keeps every allocation in the dedicated carve and is the first attempt whenever the profile
-    does not force it on: it is the faster setting, and the steadier one by a wider margin (see
-    runtime_environment). When a load has already died of out-of-memory with this model, at this
-    carve, with these memory-relevant settings, that is remembered (settings.json, shared_vram_auto)
-    and the next load starts in shared memory instead of failing the same way again. Change the
-    carve or any of those settings and it is tried afresh, so a bigger carve gets its speed back.
-    """
-    if cfg.get('shared_vram', False):
-        return True
-    remembered = settings().get('shared_vram_auto', {}).get(model['id'])
-    return bool(remembered) and remembered.get('dedicated') == dedicated_vram_bytes() \
-        and remembered.get('fingerprint') == memory_fingerprint(cfg)
-
-
-def remember_shared_vram(model, cfg):
-    all_cfg = settings()
-    all_cfg.setdefault('shared_vram_auto', {})[model['id']] = dict(
-        dedicated=dedicated_vram_bytes(), fingerprint=memory_fingerprint(cfg),
-        since=dt.datetime.now().astimezone().isoformat())
-    atomic_json(DATA / 'settings.json', all_cfg)
 
 
 # How the runtime says it ran out of device memory: ggml's allocator ("cudaMalloc failed: out of
@@ -703,7 +672,7 @@ def exit_reason(log):
     return ('error', err) if err else ('exited', '')
 
 
-def runtime_environment(cfg, unified=False):
+def runtime_environment(cfg):
     # start from a clean slate: a stray LLAMA_*/GGML_*/STRIX_* from a shell would silently change
     # the graph, and an inherited value is never what the profile asked for
     env = {k: v for k, v in os.environ.copy().items()
@@ -712,11 +681,10 @@ def runtime_environment(cfg, unified=False):
     on = cfg.get('qsa', False)
     env.update({k: ('1' if on else '0') for k in HIP_QSA_GATES})
     env['LLAMA_QSA_QUERY_STRIP'] = '512' if on else '0'
-    # Off keeps allocations in the dedicated carve. It does not eliminate shared-memory use
-    # entirely - Task Manager still shows a few GB - but it stops the spill that costs prefill:
-    # pp16384 903.64 +/- 3.71 off against 867.12 +/- 24.11 on, three llama-bench reps. Whether a
-    # load gets it is decided by unified_memory(), not read from the profile here.
-    env['GGML_HIP_ENABLE_UNIFIED_MEMORY'] = '1' if unified else '0'
+    # No *_ENABLE_UNIFIED_MEMORY: up to 0.1.14 this set GGML_HIP_ENABLE_UNIFIED_MEMORY, which nothing reads - ggml
+    # checks only GGML_CUDA_ENABLE_UNIFIED_MEMORY, and only for being set (so "0" would turn it on) - and the clean
+    # slate above drops both from the inherited environment. Allocations go to the carve, and to shared GPU
+    # memory when the display driver puts them there.
     # Q6_K decode twins of the Q8_0 trunk (llama-model.cpp build_decode_twins): batches of <= 8 tokens
     # read 23% fewer trunk bytes; prefill keeps the Q8_0 originals. No UI control - measured
     # prefill-neutral and 4% on decode for 2.9 GB, and at ctx 262144 it can stop a long prompt loading.
@@ -849,12 +817,11 @@ def state():
     ident = saved.get('identity')
     if ident and managed_runtime(ident.get('exe')) and process_identity(ident['pid']) == ident: return saved
     if ident and saved.get('adopted') is False and saved.get('log'):
-        # A process this manager started is gone without a stop. Record why, once: status() acts
-        # on an out-of-memory (shared-memory fallback) and the page can say what happened instead
-        # of silently going back to "not loaded".
+        # A process this manager started is gone without a stop. Record why, once, so the page can
+        # say what happened instead of silently going back to "not loaded".
         reason, line = exit_reason(saved['log'])
         saved = {'last_log': saved['log'], 'exited': dict(reason=reason, line=line, model_id=saved.get('model_id'),
-                 profile=saved.get('profile'), unified=bool(saved.get('unified')), log=saved['log'])}
+                 profile=saved.get('profile'), log=saved['log'])}
         atomic_json(DATA / 'process.json', saved)
         return saved
     # Adopt a server of ours on the configured local endpoint: the exact project binary, or a
@@ -885,18 +852,6 @@ def http_json(path):
 
 def status():
     s = state()
-    exited = s.get('exited')
-    if exited and exited.get('reason') == 'oom' and not exited.get('unified') and exited.get('model_id') and exited.get('profile') is not None:
-        # The load ran out of the dedicated carve. Remember that for this model, carve and profile,
-        # and load again in shared memory - once: the relaunch records unified=True, so if that
-        # dies too the failure is reported rather than retried.
-        try:
-            m = model_by_id(exited['model_id']); cfg = validate_profile(exited['profile'], m)
-            remember_shared_vram(m, cfg)
-            s = launch(m, cfg, unified=True, notice='shared_vram_fallback')
-        except Exception as exc:
-            s = {**s, 'exited': {**exited, 'reason': 'error', 'line': f'{exited.get("line", "")}; reloading in shared memory failed: {exc}'}}
-            atomic_json(DATA / 'process.json', s)
     result = {**s, 'status':'stopped', 'endpoint':f'http://127.0.0.1:{PORT}/v1',
               'runtime':s.get('identity', {}).get('exe', str(RUNTIME)),
               'runtime_available': runtime_available(), 'dedicated_vram': dedicated_vram_bytes()}
@@ -947,9 +902,9 @@ def logs(offset=0):
         return {'text':text,'offset':offset+len(b)-tail,'file':str(path),'reset':reset}
 
 
-def launch(m, cfg, unified, notice=None):
+def launch(m, cfg):
     """Start the runtime for model m with the already validated profile cfg: check the port, write
-    the log banner, record the process identity. `unified` is the shared-memory decision."""
+    the log banner, record the process identity."""
     try: http_json('/health'); fail('port_busy')
     except (urllib.error.URLError,TimeoutError): pass
     # Check port before allocating model memory; do not stop unrelated engines.
@@ -963,14 +918,14 @@ def launch(m, cfg, unified, notice=None):
     log=ROOT/'logs'/('jan-managed-'+dt.datetime.now().strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex[:6]+'.log')
     log.parent.mkdir(exist_ok=True)
     command=argv(m,cfg)
-    env=runtime_environment(cfg, unified)
+    env=runtime_environment(cfg)
     banner = (f'[strixllama] runtime={runtime.parent.name} (HIP/ROCm); LLAMA_MMB_HC16={env["LLAMA_MMB_HC16"]} '
               f'(must stay 0 on Windows); gates={sum(1 for k in env if k.startswith("LLAMA_"))}; '
               f'QSA={"on" if cfg["qsa"] else "off"} (this runtime has no context threshold); '
               f'MTP={"on" if cfg["mtp"] else "off"}'
               f'{f" (draft ubatch capped to {env['STRIX_SPEC_DRAFT_UBATCH']})" if cfg["mtp"] else ""}; '
               f'n-gram draft={"on (match=24, min=4, max=8)" if cfg["ngram_spec"] else "off"}; '
-              f'vision={"on" if cfg["vision"] else "off"}; shared memory={"on" if unified else "off"}; '
+              f'vision={"on" if cfg["vision"] else "off"}; '
               f'PLE reader=on-direct; rocm={"bundled beside the server" if bundled_rocm() else ROCM_BIN}\n')
     with log.open('wb') as f:
         f.write(banner.encode('utf-8'))
@@ -979,9 +934,8 @@ def launch(m, cfg, unified, notice=None):
     ident=process_identity(proc.pid)
     if not ident: fail('launch_failed')
     saved=dict(identity=ident,model_id=m['id'],model_path=m['path'],log=str(log),command=subprocess.list2cmdline(command),profile=cfg,
-               unified=unified,started_at=dt.datetime.now().astimezone().isoformat(),adopted=False,
+               started_at=dt.datetime.now().astimezone().isoformat(),adopted=False,
                runtime_env={k:v for k,v in env.items() if k.startswith(('LLAMA_','GGML_','STRIX_'))})
-    if notice: saved['notice']=notice
     atomic_json(DATA/'process.json',saved)
     return saved
 
@@ -1019,7 +973,7 @@ def handle(op, data):
         if m['role']!='model': fail('not_a_model')
         cfg=validate_profile(data.get('profile',profile(m)),m)
         if state().get('identity'): fail('already_loaded')
-        return {**launch(m,cfg,unified_memory(m,cfg)),'status':'loading'}
+        return {**launch(m,cfg),'status':'loading'}
     fail('unknown_op')
 
 

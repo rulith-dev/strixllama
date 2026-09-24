@@ -139,8 +139,9 @@ A conversation you come back to later is not processed again: its state is kept 
 30 KB per token, up to 16 GB, the *Keep conversation state on disk* switch on the Configuration
 page) and read back in about a second.
 
-If the load reports that it fell back to shared memory, the dedicated carve was too small for this
-configuration: raise the carve in the BIOS, or lower the context length on the Configuration page.
+If the load fails with out of memory, this configuration does not fit: raise the carve in the BIOS,
+lower the context length on the Configuration page, or give Windows a larger page file (RAM plus
+page file is the limit that runs out first; see [install.md](install.md)).
 
 The server is also an ordinary OpenAI-compatible endpoint at `http://127.0.0.1:8080/v1` while the
 model is loaded, for any other client.
@@ -173,8 +174,7 @@ Building the head yourself instead needs a source checkout with the toolchain:
   itself on. A load only refuses to start over these when a saved profile has the switch on by hand
   and the file has since gone.
 - **The load starts, then dies.** Read the Developer log. The usual causes are a GPU other than
-  gfx1151, or a carve too small for the context length (the app retries in shared memory once and
-  says so).
+  gfx1151, or a carve or page file too small for the context length.
 - **Port 8080 is in use.** A `llama-server` from an earlier instance of this app is still running;
   the status page adopts it and can unload it. Anything else on that port has to be stopped by hand.
 - **Where things are.** The app is in `%LOCALAPPDATA%\Strix Llama`; the manager's settings, model

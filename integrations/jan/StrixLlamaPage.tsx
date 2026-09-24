@@ -24,8 +24,6 @@ type Companions = { draft: string | null; draft_head: boolean; mmproj: boolean }
 type LogChunk = { text: string; offset: number; file: string; reset: boolean }
 type View = 'models' | 'configuration' | 'developer'
 const gb = (n: number) => `${(n / 1e9).toFixed(1)} GB`
-// Shared GPU memory has no control and no readout here: the manager decides it per load (see
-// unified_memory() in tools/manager.py) and says so in a notice only when it had to fall back.
 
 export default function StrixLlamaPage({ view }: { view: View }) {
   const { t } = useTranslation()
@@ -126,11 +124,6 @@ export default function StrixLlamaPage({ view }: { view: View }) {
     if (status?.status === 'ready' && noticeKey === 'loading') say('loaded')
   }, [status?.status, noticeKey])
   // The provider Jan chats through is kept in step with the server by StrixLlamaSync, app-wide.
-  // Here: the one decision the manager takes on its own during a load, which this page must say.
-  useEffect(() => {
-    if (status?.notice === 'shared_vram_fallback') say('sharedVramFallback')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status?.notice, status?.identity?.pid])
   const stop = () => act(async () => { await request('stop'); await refreshStatus(); say('unloaded') })
   const start = () => act(async () => { if (!profile) return; await request('start', { id: selected, profile }); await refreshStatus(); say('loading') })
   const save = () => act(async () => { await request('save', { id: selected, profile }); say('saved') })

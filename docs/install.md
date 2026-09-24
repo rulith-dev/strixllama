@@ -165,9 +165,9 @@ The server is then an ordinary OpenAI-compatible endpoint on `http://127.0.0.1:8
 **The defaults are the measured configuration.** A first load runs with context 262144, batch and
 ubatch 8192, flash attention on, sparse attention and MTP on for this model, one slot — the
 settings every number in [results.md](results.md) was measured with — so nothing has to be set to
-get the claimed performance. On a carve this does not fit, the load falls back to shared memory
-(next section) rather than failing; a smaller context is the setting to change if that is too
-slow. Sparse attention has to stay on above ~64K: dense attention runs out of memory there, and it
+get the claimed performance. On a carve this does not fit, the display driver puts what is left in
+shared GPU memory (see *Shared GPU memory* below), which is slower; a smaller context is the setting
+to change. Sparse attention has to stay on above ~64K: dense attention runs out of memory there, and it
 is slower below it.
 
 ### Conversations come back from disk
@@ -212,17 +212,23 @@ buffer, took it to 0.04 GB); 524288 failed with "bad allocation" although the ca
 loaded server with less than 8 GiB of commit left gets a warning on the page. Measured in
 `docs/results/kv-pool-20260924.json` and `docs/results/disk-tier-v3-20260924.json`.
 
-### Shared GPU memory is decided per load, not by a switch
+### Shared GPU memory is the display driver's decision
 
-A load first runs with `GGML_HIP_ENABLE_UNIFIED_MEMORY=0`, everything in the dedicated carve: that
-is 4% faster at prefill and, more to the point, steady — 903.6 ± 3.7 t/s against 867.1 ± 24.1 with
-it on. If the load dies of out-of-memory there, the manager loads it again in shared memory and
-remembers that for this model, this carve and these memory-relevant settings (`shared_vram_auto` in
-`config/jan/settings.json`), so the next load goes straight to what works. Enlarge the carve or
-change the context, batch, slots or draft and it is tried in the carve again. A profile can still
-force shared memory with `"shared_vram": true`; the Configuration page has no control for it and
-only says something when a load had to fall back. The dedicated size is read from the display driver's registry
-entry, so it costs nothing and needs no GPU context.
+Nothing here sets it. Up to 0.1.14 the manager set `GGML_HIP_ENABLE_UNIFIED_MEMORY` and, after a
+load that ran out of memory, loaded again with it on "in shared memory". No code in the runtime
+reads that variable - ggml reads only `GGML_CUDA_ENABLE_UNIFIED_MEMORY`, and takes any value of it,
+`0` included, as on; the HIP runtime reads neither (checked in the source and in every DLL the
+release ships) - so the second load was the first one again. 0.1.15 removes both, and a profile
+that still has `"shared_vram"` loads as if it did not.
+
+Where an allocation lands is the driver's choice: in the carve while it has room, otherwise in
+shared GPU memory, which is system RAM (Windows lets the GPU use up to half of it). At a 64 GB carve
+~9.8 GB of the model goes there and decode is 28% slower ([results.md](results.md)). The driver can
+also put allocations there while the carve still shows free space, and then they take system RAM
+directly: GitHub issue #1 saw shared memory climb to its 15.8 GB limit on 0.1.8, where on this
+machine the same growth stayed in the carve. Either way every allocation counts against commit,
+the limit described above. The dedicated size the page shows is read from the display driver's
+registry entry, so it costs nothing and needs no GPU context.
 
 ### Thinking depth
 
