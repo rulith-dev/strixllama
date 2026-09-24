@@ -19,8 +19,6 @@ prose, speculative decoding on:
 | decode, short context | **26.8 ms/token** (37.4 tok/s at 60% acceptance) |
 | image input | supported (Qwen3-VL projector) |
 
-For reference, the same model in LM Studio on the same machine decodes at about 18 tok/s.
-
 Every number in this repository comes with the command that produced it, in
 [docs/results.md](docs/results.md). Where a change could not be resolved above the noise floor, it
 says so rather than claiming a win — and decode figures carry their draft acceptance, because with

@@ -33,8 +33,6 @@ full prefill, **on a freshly started server** (see the image note below — that
 | decode, short context | **26.8 ms/token** (37.4 tok/s) | 27.47 / 26.37 / 26.42, acceptance 60%, 2.70 tokens per pass |
 | image input | works | Qwen3-VL projector, 904 MB |
 
-For reference, the same model in LM Studio on this machine decodes at about 18 tok/s.
-
 The first run of each group is a warm-up: 29.45 against 28.25 twice, 27.47 against 26.4 twice. The
 prefill figures need no such caveat — runs land within 1% of each other.
 

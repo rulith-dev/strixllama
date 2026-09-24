@@ -132,12 +132,11 @@ What to expect, measured on the reference machine:
 | | |
 |---|---|
 | short context | about 37 tok/s |
-| 85K tokens of context | about 35 tok/s, prefill about 890 t/s |
-| LM Studio, same machine, same model | about 18 tok/s |
+| 85K tokens of context | about 35 tok/s, prefill about 980 t/s |
 
-A conversation you come back to later is not processed again: its state is kept on disk (about
-30 KB per token, up to 16 GB, the *Keep conversation state on disk* switch on the Configuration
-page) and read back in about a second.
+With *Keep conversation state on disk* on (Configuration page; off by default), a conversation you
+come back to later is not processed again: its state is kept on disk (about 30 KB per token, up to
+16 GB) and read back in about a second.
 
 If the load fails with out of memory, this configuration does not fit: raise the carve in the BIOS,
 lower the context length on the Configuration page, or give Windows a larger page file (RAM plus
