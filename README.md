@@ -58,7 +58,7 @@ Optional: `integrations/jan/apply.py` overlays three management pages into a
 
 ## What is actually in here
 
-The whole delta against upstream llama.cpp is **40 files** — 36 modified, 4 added, out of 3610. The
+The whole delta against upstream llama.cpp is **42 files** — 38 modified, 4 added, out of 3610. The
 substantial pieces:
 
 | | |
@@ -86,12 +86,12 @@ happily if the tree was edited by hand and re-recorded afterwards. The strong qu
 recipe still rebuilds the tree from nothing, and that has its own tool:
 
 ```bash
-python tools/replay_bootstrap.py          # clean upstream + patch set == the 40 files, byte for byte
+python tools/replay_bootstrap.py          # clean upstream + patch set == the 42 files, byte for byte
 ```
 
-It restores the 36 modified files to upstream from the clone's own git objects, addressed by the blob
+It restores the 38 modified files to upstream from the clone's own git objects, addressed by the blob
 hashes in `bootstrap/UPSTREAM.json` — so clean upstream is reconstructed rather than trusted — then
-replays the snapshot and every script and compares. It reports **40 / 40**.
+replays the snapshot and every script and compares. It reports **42 / 42**.
 
 It was not always so. Five of the 24 were owned by no script at all - including the largest measured
 win in the project, which a clean rebuild would have silently dropped - and three scripts had drifted
