@@ -9,16 +9,17 @@ Target: **Ryzen AI Max+ 395** (Radeon 8060S, gfx1151, 128 GB unified memory) run
 
 ## Where it stands
 
-Measured on the target machine: prefill over 95.6K tokens of real text; decode at 85K tokens of real
-prose, speculative decoding on:
+Measured on the target machine with 0.2.3 (2026-09-26), speculative decoding on: prefill over 95.6K
+tokens of real text; 400 tokens decoded after 86K tokens of that text, and after a one-line question;
+several conversations of ~4K tokens each decoding together:
 
 | | |
 | --- | --- |
-| prefill | **1187 t/s** |
-| decode, 85K context | **28.7 ms/token** (34.9 tok/s at 68% draft acceptance) |
-| decode, short context | **26.8 ms/token** (37.4 tok/s at 60% acceptance) |
+| prefill | **1183 t/s** |
+| decode, 86K context | **30.7 ms/token** (32.6 tok/s at 63% draft acceptance) |
+| decode, short context | **24.4 ms/token** (41.0 tok/s at 66% acceptance) |
+| decode, 3 / 4 conversations at once | **55.7 / 60.4 tok/s** summed (1.47× / 1.59× one conversation in the same run) |
 | image input | supported (Qwen3-VL projector) |
-| decode, 3 / 4 conversations at once (~4K tokens each) | **55.7 / 60.4 tok/s** summed (1.47× / 1.59× one conversation) |
 
 Every number in this repository comes with the command that produced it, in
 [docs/results.md](docs/results.md). Where a change could not be resolved above the noise floor, it
@@ -30,6 +31,22 @@ speculation on, throughput without acceptance describes the prompt rather than t
 **[docs/getting-started.md](docs/getting-started.md)** — the installer from the
 [releases page](https://github.com/rulith-dev/strixllama/releases), the five model files to download
 and where to put them, and what to press. No Python, ROCm or build tools involved.
+
+## Model files
+
+Every number here was measured with these files. The links are pinned to the Hugging Face revision
+they were checked against (`38bb39e`: the sha256 of each file compared with the repository's on
+2026-09-26):
+
+| | File | Size |
+| --- | --- | --- |
+| **Model**, required | Unsloth's Qwen3.8-Flash-Next-GGUF, [`UD-IQ4_XS`, three shards](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/tree/38bb39ee97821de2c9009abb7e93950eec396e66/UD-IQ4_XS) | 93.7 GB |
+| **MTP draft**: speculative decoding, ~+60% decode | [`mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf`](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/blob/38bb39ee97821de2c9009abb7e93950eec396e66/MTP/mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf) | 1.9 GB |
+| **Vision projector**: image input | [`mmproj-F16.gguf`](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/blob/38bb39ee97821de2c9009abb7e93950eec396e66/mmproj-F16.gguf) | 904 MB |
+| **Draft head**, ours: the draft's own IQ4_XS output projection, +5-9% decode | [`mtp-Qwen3.8-Flash-Next-head-iq4_xs.gguf`](https://github.com/rulith-dev/strixllama/releases/download/v0.1.2/mtp-Qwen3.8-Flash-Next-head-iq4_xs.gguf) | 349 MB |
+
+All four go flat into one folder: the app finds the draft, the projector and the head by name next to
+the model's first shard. [docs/getting-started.md](docs/getting-started.md) has the download commands.
 
 ## Quick start (from source)
 

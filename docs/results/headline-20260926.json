@@ -1,0 +1,89 @@
+{
+ "date": "2026-09-26",
+ "what": "the README's headline re-measured on 0.2.3, and the model files it was measured with",
+ "setup": "bin/hip-rocm101 as released in 0.2.3 (TheRock ROCm 10.2.0a20260925), the manager's profile: ctx 262144, batch/ubatch 8192, f16 K/V, -np 1, MTP with draft_max 3 and the IQ4_XS draft head, image input on. Each run on a freshly started server (tools/decode_lab.py launches one), temperature 0, seed 1, cache_prompt false, ignore_eos. The text is tmp/realtext.txt: llama.cpp's own docs, tool READMEs and src/llama-*.cpp concatenated (340,000 characters = 95,582 tokens).",
+ "model_files": {
+  "repository": "unsloth/Qwen3.8-Flash-Next-GGUF",
+  "revision": "38bb39ee97821de2c9009abb7e93950eec396e66",
+  "check": "the sha256 of each local file equals the LFS oid the Hugging Face API gives for it at this revision; sizes equal too",
+  "files": {
+   "UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf": {
+    "bytes": 10946624,
+    "sha256": "5ce89370720f8bf90890f439361282104c1aa1482d4013bb9a50923e758e71a4"
+   },
+   "UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00002-of-00003.gguf": {
+    "bytes": 49835229856,
+    "sha256": "577a38a2392b40ca2193cea502e1d92f60b8cd370675d308e0ec21885d9daaa7"
+   },
+   "UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00003-of-00003.gguf": {
+    "bytes": 43836407744,
+    "sha256": "d4634e6d84f0ebb0940be15c90d3790bf6464e3dea3a1cddc567dc0e83ad8833"
+   },
+   "MTP/mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf": {
+    "bytes": 1907151936,
+    "sha256": "f521868a9e143718bef513772f6e04d9642551e362cf2439636d2abdbd149dfc"
+   },
+   "mmproj-F16.gguf": {
+    "bytes": 904004000,
+    "sha256": "1f7b7f0b984cf065c604360c29c8098362ed61b290db0ff12c6f360bb1a8a980"
+   }
+  },
+  "draft_head": {
+   "url": "https://github.com/rulith-dev/strixllama/releases/download/v0.1.2/mtp-Qwen3.8-Flash-Next-head-iq4_xs.gguf",
+   "bytes": 348659808,
+   "sha256": "dedf92e37500056617efdd75e290d11652c4f191574308e5bce643eb31722409",
+   "check": "equals the digest GitHub gives for the v0.1.2 release asset"
+  }
+ },
+ "prefill_95_6k": {
+  "method": "tools/decode_lab.py --model ba09dd01dc9c5fd1df9d --config dectime --words 700 --n 4 --gen 16 --gen-prefix tmp/realtext.txt --gen-prefix-chars 340000 (tmp/kvr/head_023.sh); the server's prompt eval rate",
+  "t_s": [
+   1191.15,
+   1167.35,
+   1182.77
+  ],
+  "median": 1182.77,
+  "0.2.0_2026_09_25": [
+   1187.36,
+   1183.7,
+   1200.55
+  ]
+ },
+ "decode_86k": {
+  "method": "tools/decode_lab.py --model ba09dd01dc9c5fd1df9d --config base --words 700 --n 4 --gen 400 --gen-prefix tmp/realtext.txt --gen-prefix-chars 302000 (tmp/kvr/dec_023.sh)",
+  "ms_per_token": [
+   32.14,
+   30.65,
+   29.81
+  ],
+  "tok_s": [
+   31.12,
+   32.63,
+   33.55
+  ],
+  "acceptance": "259/413 = 63%, 2.84 tokens per pass, all three runs",
+  "0.2.0_2026_09_25": {
+   "ms_per_token": [
+    29.1,
+    29.67,
+    29.48
+   ],
+   "acceptance": "257/417 = 62%, 2.80 tokens per pass"
+  }
+ },
+ "decode_short": {
+  "method": "the same without --gen-prefix: the prompt is the lab's one-line question (a B-tree explanation), 400 tokens",
+  "ms_per_token": [
+   25.31,
+   24.38,
+   24.27
+  ],
+  "tok_s": [
+   39.52,
+   41.02,
+   41.21
+  ],
+  "acceptance": "262/394 = 66%, 2.90 tokens per pass, all three runs"
+ },
+ "reading": "the first run of each decode group is a warm-up. At 86K 0.2.3 is ~2-3% slower a step than 0.2.0 (runs 2-3 30.2 ms/token against 29.4, at 2.84 against 2.80 tokens per pass); the truncation gate at 77K agrees (84.0 ms a pass against 0.2.2's 82.4); not yet traced. The decode rows moved against the 2026-09-19 ones mostly because the text did: English docs and code draft at 63% at depth where the Chinese prose of 2026-09-19 drafted at 68-69%, and the one-line question drafts at 66% where the lab's random-word probe gave 60%."
+}

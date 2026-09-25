@@ -23,29 +23,38 @@ the driver pages during decode: prefill 839 vs 942 t/s, decode 49.6 vs 38.6 ms/t
 
 ## Headline
 
-Measured 2026-09-19 on the shipped build, at temperature 0, `cache_prompt: false` so each run pays a
-full prefill, **on a freshly started server** (see the image note below — that qualifier is load-bearing):
+Measured 2026-09-26 on 0.2.3, at temperature 0, `cache_prompt: false` so each run pays a full prefill,
+**on a freshly started server** (see the image note below — that qualifier is load-bearing), with the
+model files of [the README's list](../README.md#model-files):
 
 | | | |
 |---|---|---|
-| prefill, 95.6K tokens of real text | **1187 t/s** | 1187.4 / 1183.7 / 1200.6 over 3 runs, 0.2.0 |
-| decode, 85K context | **28.7 ms/token** (34.9 tok/s) | 29.45 / 28.25 / 28.25, draft acceptance 68-69%, 2.99 tokens per pass |
-| decode, short context | **26.8 ms/token** (37.4 tok/s) | 27.47 / 26.37 / 26.42, acceptance 60%, 2.70 tokens per pass |
+| prefill, 95.6K tokens of real text | **1183 t/s** | 1191.2 / 1167.4 / 1182.8 over 3 runs |
+| decode, 86K context | **30.7 ms/token** (32.6 tok/s) | 32.14 / 30.65 / 29.81, draft acceptance 63%, 2.84 tokens per pass |
+| decode, short context | **24.4 ms/token** (41.0 tok/s) | 25.31 / 24.38 / 24.27, acceptance 66%, 2.90 tokens per pass |
+| decode, 3 / 4 conversations at once | **55.7 / 60.4 tok/s** summed | ~4K tokens each, default sampling, six rounds each |
 | image input | works | Qwen3-VL projector, 904 MB |
-| decode, 3 / 4 conversations at once | **55.7 / 60.4 tok/s** summed | ~4K tokens each, default sampling, six rounds each, 0.2.3 |
 
-The first run of each group is a warm-up: 29.45 against 28.25 twice, 27.47 against 26.4 twice. The
-prefill figures need no such caveat — runs land within 1-3% of each other.
+The first run of each decode group is a warm-up: 32.14 against 30.2 for the other two, 25.31 against
+24.3. The prefill figures need no such caveat — runs land within 1-3% of each other.
 
-The prefill row is 0.2.0's, measured 2026-09-25, each run on a fresh server, alternating with 0.1.17 on
-the same text:
-`tools/decode_lab.py --config dectime --words 700 --n 4 --gen 16 --gen-prefix <text> --gen-prefix-chars 340000`,
-where the text is llama.cpp's own docs, tool READMEs and `src/llama-*.cpp` concatenated (95,582
-tokens). 0.1.17 gave 999.1 / 965.5 / 992.4 in between; 0.1.9 982.1 / 979.6 / 988.7 (2026-09-23),
-0.1.8 888.3 / 892.9 / 889.7, and the 2026-09-19 build 886.2 / 883.7 / 887.6 on 85K tokens of prose.
-The decode rows are older; 0.2.0 does not change decode (below). The row of several conversations is
-0.2.3's, measured 2026-09-26 with the server's default sampling and the prompts cached; one conversation
-gets ~38 tok/s there, so three give 1.47× and four 1.59× (below).
+The text is llama.cpp's own docs, tool READMEs and `src/llama-*.cpp` concatenated; 340,000 characters of
+it are 95,582 tokens, 302,000 are ~86K:
+
+- prefill: `tools/decode_lab.py --config dectime --words 700 --n 4 --gen 16 --gen-prefix <text> --gen-prefix-chars 340000`
+- decode at 86K: `tools/decode_lab.py --config base --words 700 --n 4 --gen 400 --gen-prefix <text> --gen-prefix-chars 302000`
+- decode at short context: the same without `--gen-prefix`, so the prompt is the lab's one-line question
+
+Earlier prefill on the same text: 0.2.0 1187.4 / 1183.7 / 1200.6 (2026-09-25), 0.1.17 999.1 / 965.5 /
+992.4, 0.1.9 982.1 / 979.6 / 988.7 (2026-09-23), 0.1.8 888.3 / 892.9 / 889.7, and the 2026-09-19 build
+886.2 / 883.7 / 887.6 on 85K tokens of prose. Decode at 86K on the same text: 0.2.0 29.10 / 29.67 / 29.48
+ms/token at 62% acceptance, so 0.2.3 is ~2-3% slower a step at depth (the truncation gate at 77K agrees:
+84.0 ms a pass against 0.2.2's 82.4); not yet traced. Until 2026-09-26 the decode rows were the
+2026-09-19 build's on Chinese prose, where drafts are accepted more often: 28.7 ms/token (34.9 tok/s)
+at 85K with 68-69% acceptance, and 26.8 ms/token (37.4 tok/s) at short context on the lab's random-word
+probe at 60%. The row of several conversations is from the 0.2.2 / 0.2.3 A/B (below), with the
+server's default sampling and the prompts cached; one conversation gets ~38 tok/s there, so three give
+1.47× and four 1.59×. Details: `docs/results/headline-20260926.json`.
 
 ### A slot that has served an image decodes ~7% slower until it is cleared
 

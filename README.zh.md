@@ -9,15 +9,16 @@
 
 ## 当前水平
 
-本机实测：预填充为 95.6K token 真实文本；解码为 85K token 真实散文，推测解码开启：
+本机用 0.2.3 实测（2026-09-26），推测解码开启：预填充为 95.6K token 真实文本；解码为在同一文本的
+86K token 之后、以及只有一句提问之后各生成 400 token；多路为几个各约 4K 上下文的对话同时解码：
 
 | | |
 | --- | --- |
-| 预填充 | **1187 t/s** |
-| 解码，85K 上下文 | **28.7 ms/token**（34.9 tok/s，草稿接受率 68%） |
-| 解码，短上下文 | **26.8 ms/token**（37.4 tok/s，接受率 60%） |
+| 预填充 | **1183 t/s** |
+| 解码，86K 上下文 | **30.7 ms/token**（32.6 tok/s，草稿接受率 63%） |
+| 解码，短上下文 | **24.4 ms/token**（41.0 tok/s，接受率 66%） |
+| 解码，3 / 4 路同时 | **55.7 / 60.4 tok/s** 合计（同一轮测试里单路的 1.47 / 1.59 倍） |
 | 图像输入 | 支持（Qwen3-VL 投影模型） |
-| 解码，3 / 4 路同时（各约 4K 上下文） | **55.7 / 60.4 tok/s** 合计（单路的 1.47 / 1.59 倍） |
 
 本仓库里的每个数字都附带产生它的命令，见 [docs/results.md](docs/results.md)。凡是改动无法在噪声
 之上分辨的，就直接写明分辨不出，而不是算作收益；解码数字一律带上草稿接受率——开着推测解码时，脱离
@@ -28,6 +29,21 @@
 **[docs/getting-started.zh.md](docs/getting-started.zh.md)**——从
 [Releases 页面](https://github.com/rulith-dev/strixllama/releases)装安装包、要下载的五个模型文件和
 放在哪、点什么。不涉及 Python、ROCm 或任何编译工具。
+
+## 模型文件
+
+这里的每个数字都是用下面这些文件测的。链接固定在核对过的 Hugging Face 版本上（`38bb39e`：
+2026-09-26 逐个文件比对过 sha256）：
+
+| | 文件 | 大小 |
+| --- | --- | --- |
+| **模型**，必需 | Unsloth 的 Qwen3.8-Flash-Next-GGUF，[`UD-IQ4_XS`，三个分片](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/tree/38bb39ee97821de2c9009abb7e93950eec396e66/UD-IQ4_XS) | 93.7 GB |
+| **MTP 草稿**：推测解码，解码约 +60% | [`mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf`](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/blob/38bb39ee97821de2c9009abb7e93950eec396e66/MTP/mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf) | 1.9 GB |
+| **视觉投影**：图像输入 | [`mmproj-F16.gguf`](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/blob/38bb39ee97821de2c9009abb7e93950eec396e66/mmproj-F16.gguf) | 904 MB |
+| **草稿头**，本项目提供：草稿自带的 IQ4_XS 输出投影，解码 +5–9% | [`mtp-Qwen3.8-Flash-Next-head-iq4_xs.gguf`](https://github.com/rulith-dev/strixllama/releases/download/v0.1.2/mtp-Qwen3.8-Flash-Next-head-iq4_xs.gguf) | 349 MB |
+
+四样都平铺放进同一个文件夹：应用按文件名在模型第一个分片旁边找草稿、投影和草稿头。下载命令见
+[docs/getting-started.zh.md](docs/getting-started.zh.md)。
 
 ## 快速开始（从源码）
 

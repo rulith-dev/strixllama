@@ -43,15 +43,17 @@ If LM Studio has already downloaded this model, you have most of the files and c
 next section — the app reads LM Studio's folder in place, nothing is copied.
 
 All five come from one Hugging Face repository,
-[unsloth/Qwen3.8-Flash-Next-GGUF](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF):
+[unsloth/Qwen3.8-Flash-Next-GGUF](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF). The links and
+commands below are pinned to its revision `38bb39e`, the one every file was checked against (sha256,
+2026-09-26):
 
 | # | Path in the repository | Size | What it is |
 |---|---|---|---|
-| 1 | `UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf` | 11 MB | the model, shard 1 of 3 (metadata) |
-| 2 | `UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00002-of-00003.gguf` | 49.8 GB | the model, shard 2 |
-| 3 | `UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00003-of-00003.gguf` | 43.8 GB | the model, shard 3 |
-| 4 | `MTP/mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf` | 1.9 GB | the MTP draft: speculative decoding, roughly +60% decode speed |
-| 5 | `mmproj-F16.gguf` | 904 MB | the vision projector: image input |
+| 1 | [`UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf`](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/blob/38bb39ee97821de2c9009abb7e93950eec396e66/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf) | 11 MB | the model, shard 1 of 3 (metadata) |
+| 2 | [`UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00002-of-00003.gguf`](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/blob/38bb39ee97821de2c9009abb7e93950eec396e66/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00002-of-00003.gguf) | 49.8 GB | the model, shard 2 |
+| 3 | [`UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00003-of-00003.gguf`](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/blob/38bb39ee97821de2c9009abb7e93950eec396e66/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00003-of-00003.gguf) | 43.8 GB | the model, shard 3 |
+| 4 | [`MTP/mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf`](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/blob/38bb39ee97821de2c9009abb7e93950eec396e66/MTP/mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf) | 1.9 GB | the MTP draft: speculative decoding, roughly +60% decode speed |
+| 5 | [`mmproj-F16.gguf`](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/blob/38bb39ee97821de2c9009abb7e93950eec396e66/mmproj-F16.gguf) | 904 MB | the vision projector: image input |
 
 **Why exactly these.** Every number this project publishes was measured on the `UD-IQ4_XS` quant;
 other quants of the same model load, but nothing here is tuned or verified for them. Files 1–3 are
@@ -60,8 +62,8 @@ automatically when they are in the folder and left off when they are not, and th
 page says which of the two it did not find. Without the draft, decode is about 40% slower.
 (`mtp-…-shared-Q8_0.gguf` works in place of file 4; the two are within 1% of each other.)
 
-**One more, optional: the draft head** — `mtp-Qwen3.8-Flash-Next-head-iq4_xs.gguf`, 349 MB, from
-this project's [releases page](https://github.com/rulith-dev/strixllama/releases). Put it in the
+**One more, optional: the draft head** — [`mtp-Qwen3.8-Flash-Next-head-iq4_xs.gguf`](https://github.com/rulith-dev/strixllama/releases/download/v0.1.2/mtp-Qwen3.8-Flash-Next-head-iq4_xs.gguf), 349 MB,
+from this project's [releases page](https://github.com/rulith-dev/strixllama/releases). Put it in the
 same folder as file 4. On the next rescan the app combines the two into
 `mtp-Qwen3.8-Flash-Next-shared-Q4_K_M-head-iq4_xs.gguf` (a few seconds, once) and prefers it: decode
 is 5% faster on English and 9% on Chinese with the same acceptance rate, which is the configuration
@@ -73,7 +75,7 @@ With [aria2](https://aria2.github.io/) in PowerShell — this puts the five file
 resumes if interrupted, and is the fastest way we know of for files this size:
 
 ```powershell
-$base = "https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/resolve/main"
+$base = "https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/resolve/38bb39ee97821de2c9009abb7e93950eec396e66"
 $dir  = "D:\models\unsloth\Qwen3.8-Flash-Next-GGUF"
 New-Item -ItemType Directory -Force $dir | Out-Null
 foreach ($f in
@@ -84,6 +86,8 @@ foreach ($f in
     "mmproj-F16.gguf") {
   aria2c -x 8 -s 8 -c -d $dir -o (Split-Path $f -Leaf) "$base/$f"
 }
+# optional: the draft head (section 5)
+aria2c -x 8 -s 8 -c -d $dir "https://github.com/rulith-dev/strixllama/releases/download/v0.1.2/mtp-Qwen3.8-Flash-Next-head-iq4_xs.gguf"
 ```
 
 If Hugging Face is slow or unreachable where you are, use the mirror: replace `huggingface.co` in
@@ -92,7 +96,8 @@ If Hugging Face is slow or unreachable where you are, use the mirror: replace `h
 With the Hugging Face CLI instead (`pip install huggingface_hub`):
 
 ```bash
-hf download unsloth/Qwen3.8-Flash-Next-GGUF --local-dir D:\models\unsloth\Qwen3.8-Flash-Next-GGUF \
+hf download unsloth/Qwen3.8-Flash-Next-GGUF --revision 38bb39ee97821de2c9009abb7e93950eec396e66 \
+  --local-dir D:\models\unsloth\Qwen3.8-Flash-Next-GGUF \
   --include "UD-IQ4_XS/*" "MTP/mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf" "mmproj-F16.gguf"
 ```
 
@@ -131,8 +136,9 @@ What to expect, measured on the reference machine:
 
 | | |
 |---|---|
-| short context | about 37 tok/s |
-| 85K tokens of context | about 35 tok/s, prefill about 980 t/s |
+| short context | about 41 tok/s |
+| 86K tokens of context | about 33 tok/s; prefill about 1180 t/s |
+| three / four conversations at once | about 56 / 60 tok/s summed, with *Concurrent slots* at 4 (Advanced; image input needs a single slot) |
 
 With *Keep conversation state on disk* on (Configuration page; off by default), a conversation you
 come back to later is not processed again: its state is kept on disk (about 30 KB per token, up to

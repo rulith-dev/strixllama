@@ -40,22 +40,23 @@ D:\models\unsloth\Qwen3.8-Flash-Next-GGUF\
 LM Studio 的目录，不复制。
 
 五个文件都来自同一个 Hugging Face 仓库
-[unsloth/Qwen3.8-Flash-Next-GGUF](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF)：
+[unsloth/Qwen3.8-Flash-Next-GGUF](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF)。下面的链接和
+命令都固定在它的 `38bb39e` 版本上，每个文件都对这个版本核对过 sha256（2026-09-26）：
 
 | # | 仓库内路径 | 大小 | 作用 |
 |---|---|---|---|
-| 1 | `UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf` | 11 MB | 模型分片 1/3（元数据） |
-| 2 | `UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00002-of-00003.gguf` | 49.8 GB | 模型分片 2 |
-| 3 | `UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00003-of-00003.gguf` | 43.8 GB | 模型分片 3 |
-| 4 | `MTP/mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf` | 1.9 GB | MTP 草稿：推测解码，解码速度约 +60% |
-| 5 | `mmproj-F16.gguf` | 904 MB | 视觉投影：图像输入 |
+| 1 | [`UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf`](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/blob/38bb39ee97821de2c9009abb7e93950eec396e66/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf) | 11 MB | 模型分片 1/3（元数据） |
+| 2 | [`UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00002-of-00003.gguf`](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/blob/38bb39ee97821de2c9009abb7e93950eec396e66/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00002-of-00003.gguf) | 49.8 GB | 模型分片 2 |
+| 3 | [`UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00003-of-00003.gguf`](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/blob/38bb39ee97821de2c9009abb7e93950eec396e66/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00003-of-00003.gguf) | 43.8 GB | 模型分片 3 |
+| 4 | [`MTP/mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf`](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/blob/38bb39ee97821de2c9009abb7e93950eec396e66/MTP/mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf) | 1.9 GB | MTP 草稿：推测解码，解码速度约 +60% |
+| 5 | [`mmproj-F16.gguf`](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/blob/38bb39ee97821de2c9009abb7e93950eec396e66/mmproj-F16.gguf) | 904 MB | 视觉投影：图像输入 |
 
 **为什么正好是这几个。** 本项目公布的所有数字都是在 `UD-IQ4_XS` 这个量化上测的；同一模型的其他
 量化也能加载，但没有针对它们调过、也没验证过。第 1–3 个是模型本体，必须有。第 4、5 个是可选的：
 草稿和投影在文件夹里就自动开启，不在就保持关闭，"模型配置"页会说明没找到哪一个。没有草稿，
 解码慢约 40%。（第 4 个换成 `mtp-…-shared-Q8_0.gguf` 也行，两者相差不到 1%。）
 
-**再加一个，可选：草稿头**——`mtp-Qwen3.8-Flash-Next-head-iq4_xs.gguf`，349 MB，在本项目的
+**再加一个，可选：草稿头**——[`mtp-Qwen3.8-Flash-Next-head-iq4_xs.gguf`](https://github.com/rulith-dev/strixllama/releases/download/v0.1.2/mtp-Qwen3.8-Flash-Next-head-iq4_xs.gguf)，349 MB，在本项目的
 [Releases 页面](https://github.com/rulith-dev/strixllama/releases)。放到第 4 个文件所在的同一个
 文件夹。下次重新扫描时应用会把两者合并成 `mtp-Qwen3.8-Flash-Next-shared-Q4_K_M-head-iq4_xs.gguf`
 （几秒钟，只做一次）并优先使用：英文解码快 5%，中文快 9%，接受率不变，下面的数字就是这个配置测的。
@@ -67,7 +68,7 @@ LM Studio 的目录，不复制。
 这么大的文件我们知道的最快办法：
 
 ```powershell
-$base = "https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/resolve/main"
+$base = "https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/resolve/38bb39ee97821de2c9009abb7e93950eec396e66"
 $dir  = "D:\models\unsloth\Qwen3.8-Flash-Next-GGUF"
 New-Item -ItemType Directory -Force $dir | Out-Null
 foreach ($f in
@@ -78,6 +79,8 @@ foreach ($f in
     "mmproj-F16.gguf") {
   aria2c -x 8 -s 8 -c -d $dir -o (Split-Path $f -Leaf) "$base/$f"
 }
+# 可选：草稿头（第 5 节）
+aria2c -x 8 -s 8 -c -d $dir "https://github.com/rulith-dev/strixllama/releases/download/v0.1.2/mtp-Qwen3.8-Flash-Next-head-iq4_xs.gguf"
 ```
 
 国内访问 Hugging Face 慢或不通的话用镜像：把 `$base` 里的 `huggingface.co` 换成 `hf-mirror.com`。
@@ -85,7 +88,8 @@ foreach ($f in
 用 Hugging Face 命令行也可以（`pip install huggingface_hub`）：
 
 ```bash
-hf download unsloth/Qwen3.8-Flash-Next-GGUF --local-dir D:\models\unsloth\Qwen3.8-Flash-Next-GGUF \
+hf download unsloth/Qwen3.8-Flash-Next-GGUF --revision 38bb39ee97821de2c9009abb7e93950eec396e66 \
+  --local-dir D:\models\unsloth\Qwen3.8-Flash-Next-GGUF \
   --include "UD-IQ4_XS/*" "MTP/mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf" "mmproj-F16.gguf"
 ```
 
@@ -118,8 +122,9 @@ hf download unsloth/Qwen3.8-Flash-Next-GGUF --local-dir D:\models\unsloth\Qwen3.
 
 | | |
 |---|---|
-| 短上下文 | 约 37 tok/s |
-| 85K token 上下文 | 约 35 tok/s，预填充约 980 t/s |
+| 短上下文 | 约 41 tok/s |
+| 86K token 上下文 | 约 33 tok/s；预填充约 1180 t/s |
+| 三 / 四路同时 | 合计约 56 / 60 tok/s，需在"高级"里把并发槽位设为 4（图像输入只支持单个槽位） |
 
 打开配置页的"对话状态存盘"开关（默认关闭）后，过一阵子回到某个对话时不会重新处理它的提示词：对话状态会存在
 磁盘上（每 token 约 30 KB，最多 16 GB），回来时一秒左右读回。
