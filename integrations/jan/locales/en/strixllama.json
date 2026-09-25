@@ -143,7 +143,8 @@
       "ngramPending": "Not yet applied. Reload the model after saving.",
       "applyOnReload": "Reload the model after saving."
     },
-    "footer": "Saving does not interrupt an ongoing chat. To apply new parameters, unload the model and load it again."
+    "footer": "Saving does not interrupt an ongoing chat. To apply new parameters, unload the model and load it again.",
+    "madeBy": "Strix Llama is open source, made by Rulith: verifiable execution infrastructure for AI agents."
   },
   "developer": {
     "process": "Model process",

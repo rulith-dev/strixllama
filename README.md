@@ -18,6 +18,7 @@ prose, speculative decoding on:
 | decode, 85K context | **28.7 ms/token** (34.9 tok/s at 68% draft acceptance) |
 | decode, short context | **26.8 ms/token** (37.4 tok/s at 60% acceptance) |
 | image input | supported (Qwen3-VL projector) |
+| decode, 3 / 4 conversations at once (~4K tokens each) | **55.7 / 60.4 tok/s** summed (1.47× / 1.59× one conversation) |
 
 Every number in this repository comes with the command that produced it, in
 [docs/results.md](docs/results.md). Where a change could not be resolved above the noise floor, it
@@ -46,7 +47,7 @@ remembered.
 
 **Read [docs/install.md](docs/install.md) first.** Three things there are not optional and not
 obvious: the GPU carve must be 96 GB (at 64 GB the model does not fit and decode is 28% slower, which
-no software setting recovers), the ROCm SDK must be TheRock 10.1 rather than the system 7.1 (+60%
+no software setting recovers), the ROCm SDK must be TheRock 10.2 rather than the system 7.1 (+60%
 prefill on identical source), and the SDK version this was measured on comes from a nightly index
 with a ~27-day window — so the pin will stop resolving, and that page says what to do about it. The
 model files are a separate download of about 95 GB.
@@ -67,7 +68,7 @@ substantial pieces:
 | **Sparse attention at decode** | The sparse kernel needs a packed layout only prefill builds, so a decoded token attended densely over the whole cache. Gathering the selected cells instead: 97K decode 59.0 → 49.3 ms/token, and the context slope drops from 0.188 to 0.067 ms per 1000 tokens. |
 | **A Q8_0 K/V cache, optional** | The sparse-attention kernels read f16 only, so a Q8_0 cache is dequantized into their layout each batch: at 262144 tokens the K/V cache takes 3.2 GB instead of 6, decode is unchanged and prefill 1-2% slower. f16 stays the default. |
 | **MTP speculation, tuned** | Draft head with its own IQ4_XS output projection, three draft tokens, n-gram drafting off. 85K decode 21.5 → 34.9 tok/s. |
-| **Drafts sized by concurrency** | In this mixture of experts every verified draft token reads the weights of ~10 more experts, which conversations decoding together cannot share: four at once verified 16 tokens a step. The draft now shrinks as more conversations generate (3, then 2, none from four on): four conversations 37.9 → 47.1 tok/s summed. And the drafts of one step are the same length: the hybrid memory ran a verify of uneven drafts as several passes of the whole model, so three conversations at 4K tokens got 34 tok/s with drafting and 46 without; now 46 with it. |
+| **Drafts sized by concurrency** | In this mixture of experts every verified draft token reads the weights of ~10 more experts, which conversations decoding together cannot share. The draft shrinks as more conversations generate (3, then 2 up to four conversations, none from five on). The drafts of one step are the same length: the hybrid memory ran a verify of uneven drafts as several passes of the whole model, so three conversations at 4K tokens got 34 tok/s with drafting and 46 without; now 46 with it. And a verify step of several conversations (5-16 tokens) runs the MoE router and the routed experts on the vector kernel, not on tiles it barely filled: three conversations 47.7 → 55.7 tok/s summed, four 55.4 → 60.4. |
 | **Output that does not depend on what ran before** | Freed KV cells are zeroed: the sparse attention's matrix-core sums moved in the last bit with what an earlier conversation or a rejected draft had left in them. The MTP drafter's carried state follows a conversation through rewinds and the prompt cache: the same prompt sent twice drafts, and answers, the same. |
 | **Two correctness fixes** | Speculative verification batches ran dense attention with no causal mask, so long answers drifted and stopped early. Image input aborted the server three separate ways in the QSA block machinery. |
 | **Measurement instrumentation** | Per-graph, per-dispatch and per-phase timing, all off unless an environment variable is set. |
@@ -127,3 +128,7 @@ the ones above — it is a list of the ways this project measured itself wrong.
 MIT, see [LICENSE](LICENSE). Third-party attribution in [NOTICE.md](NOTICE.md) — in particular this
 patches [pwilkin/llama.cpp](https://github.com/pwilkin/llama.cpp) (MIT) and the Jan overlay is meant
 for a [Jan](https://github.com/menloresearch/jan) checkout (Apache-2.0).
+
+---
+
+Strix Llama is made by [Rulith](https://rulith.ai) (Shanghai Rulith Technology Co., Ltd.): verifiable execution infrastructure for AI agents.
