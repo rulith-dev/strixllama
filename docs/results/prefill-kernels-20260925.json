@@ -46,8 +46,11 @@
  },
  "accuracy": {
   "ppl_ctx8192_8_chunks": {"method": "tmp/kvr/ppl_kb.py --ctx 8192 --ubatch 8192 --chunks 8 on tmp/realtext.txt",
-   "0.2.0_f16": 2.6811, "0.2.0_q8_0": 2.6927, "0.1.17_f16": 2.6880,
+   "0.2.0_f16": 2.6811, "0.2.0_q8_0": 2.6927, "0.1.17_f16": 2.6841, "0.1.17_q8_0": 2.6951,
+   "0.1.17_f16_chunks": [3.6925, 3.2519, 2.7672, 2.4104, 2.2922, 2.5686, 2.5508, 2.6841],
+   "correction": "0.2.0's first notes cited 2.6880 for 0.1.17: that was the development build with the inject fusion off, not the released 0.1.17, measured on its own runtime here (tmp/rt0117 plus llama-perplexity)",
    "0.2.0_f16_chunks": [3.7402, 3.2434, 2.7635, 2.4071, 2.2879, 2.5647, 2.5475, 2.6811]},
+  "09_17_gate": {"method": "the same tool on D:/Work/fastllm/corpus/ppl-en-code.txt (English and code), ubatch 512", "ctx4096_6_chunks": {"0.2.0": 2.4730, "0.1.17": 2.4741, "2026-09-17": 2.4724}, "ctx2048_12_chunks": {"0.2.0": 2.3808, "0.1.17": 2.3786, "2026-09-17": 2.3807}},
   "equivalence_probe_18_6k": "tmp/fusion_equiv_probe.py, f16, MTP off: the same 48 tokens as 0.1.17; top probabilities differ from the first token (logprob -0.0777 against -0.0485). With STRIX_HC_INJECT_FUSE=0 STRIX_GDN_R16=0 STRIX_SKINNY_F32=0 STRIX_MMB_F32_MIN_T=512 every token and top-5 probability is 0.1.17's",
   "why_not_bitwise": "the inject's four per-stream partial sums, the GDN kernel's decay-scaled state (folded back below 2^-20) and the narrow F32 kernels add in another order than 0.1.17; this model amplifies a last-bit difference (a 1-ULP change moves single-chunk KLD by 0.01-0.024), so perplexity over 8 chunks and per-kernel difference checks are the measure, not one chunk's KLD"
  },

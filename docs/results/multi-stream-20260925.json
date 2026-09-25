@@ -1,0 +1,45 @@
+{
+ "date": "2026-09-25",
+ "what": "0.2.1: several conversations decoding at once - the drafts of one step made the same length (apply_spec_even_drafts), the sparse-attention membership product off hipBLAS (apply_small_k_membership); where a multi-conversation step's time goes",
+ "setup": "Qwen3.8-Flash-Next UD-IQ4_XS, the manager's profile with parallel=4 (ctx 262144, f16 K/V unless stated, MTP with draft_max 3 and the manager's cap STRIX_SPEC_DRAFT_BY_SLOTS=3,2,2,0). tmp/kvr/bs_probe.py through tmp/kvr/bs_sweep.py on a server started as production (tmp/kvr/with_server.py): N conversations of distinct real text (tmp/realtext.txt slices of 14500 characters, ~4K tokens, or 75000, ~20K) pinned to slots and cached first, then N x 128 tokens at once with the server's default sampling; tok/s summed over the conversations, wall clock, median of 2 rounds.",
+ "question": "the user: three conversations at once only ~42 tok/s summed, and gufo-org/gufo's multi-user table is much higher; where is the bottleneck?",
+ "speculation_off_4k": {
+  "tok_s_by_streams": {"1": 23.8, "2": 37.0, "3": 46.1, "4": 53.6},
+  "per_step_ms": {
+   "method": "LLAMA_GRAPH_TIMING=1: per decode compute, hostgap (host time since the previous compute returned, the GPU idle), submit (host enqueueing while the GPU runs), gpu_wait (the rest); medians (tmp/kvr/gt_steps.py)",
+   "1": {"hostgap": 1.6, "submit": 6.0, "gpu_wait": 33.75},
+   "2": {"hostgap": 2.0, "submit": 5.7, "gpu_wait": 42.7},
+   "3": {"hostgap": 3.0, "submit": 7.2, "gpu_wait": 51.2},
+   "4": {"hostgap": 3.5, "submit": 7.1, "gpu_wait": 60.2}
+  },
+  "reading": "~8.8 ms of GPU time for every further conversation: ~4.5 is the weights of the 10 experts a new token routes to (10 x 47 layers x 2.33 MB at ~220 GB/s), which conversations with different text do not share; the rest is per-sequence GDN, the multi-sequence sparse-attention path and ~125 more dispatches a sequence (STRIX_NODE_TIMING differences between 1 and 3 streams: routed experts +8.7 ms, GDN +4.4, attention and its membership +4.8, shared expert +2.0, hyper-connections +1.8, graphs off)"
+ },
+ "uneven_drafts": {
+  "before_0_2_1_tok_s": {"4k": {"2": [25.9, 35.8, 38.7], "3": [34.3, 28.1]}, "20k": {"2": [39.6, 42.4], "3": [39.6]}},
+  "speculation_off_tok_s": {"4k": {"2": 34.6, "3": 44.9}, "20k": {"2": 33.8, "3": 42.6}},
+  "cause": "with STRIX_SPEC_TIMING=1 LLAMA_GRAPH_TIMING=1 STRIX_DECODE_TIMING=1 at 3 streams: target decodes of 5-9 tokens split into 2-3 ubatches (the hybrid memory's split_equal needs the same tokens for every sequence) in 15 of 78 steps, 200-440 ms each against ~150 for an even 9-token verify (timing syncs included), 35% of the decode time; the split ubatches ran without HIP graphs (graph rebuild ~28 ms, submit 40-50 ms of separate launches, 10-15 ms of GPU work)",
+  "fix": "apply_spec_even_drafts: an unconfident sequence keeps drafting while another is confident, all cut to the longest confident run; the server cuts every draft to the shortest when a generating slot drafted nothing, unless one replays accepted tokens",
+  "cap_sweep_even_drafts_tok_s": {
+   "4k": {"2 streams": {"d2": 42.7, "d1": 37.5, "d0": 32.4}, "3 streams": {"d2": 44.3, "d1": 40.6, "d0": 43.9}},
+   "20k": {"2 streams": {"d2": 41.5, "d1": 41.7, "d0": 33.9}, "3 streams": {"d2": 44.1, "d1": 47.1, "d0": 42.6}},
+   "reading": "with even drafts the manager's cap (2 drafts for two or three conversations) is never worse than no drafting, so it stays"
+  },
+  "after_tok_s_manager_cap": {"4k": {"1": 34.5, "2": 38.9, "3": 45.7}, "20k": {"1": 35.5, "2": 42.0, "3": 45.7}},
+  "release_gate_4k_rounds": {"1": [41.0, 41.3], "2": [44.5, 46.0], "3": [46.5, 37.8], "note": "the second 3-stream round ran at 68-77 ms a token with the same 68% acceptance: run-to-run spread, not drafts"}
+ },
+ "four_streams_q8_0_20k": {
+  "method": "bs_probe --streams 4 --rounds 3 --n 256, parallel=4 kv=q8_0 kv_pool=350208, alternating builds (tmp/kvr/ab_4streams.sh); four conversations do not draft",
+  "0.2.0": [48.6, 50.3], "0.2.1": [49.4, 49.9]
+ },
+ "membership_stall": {
+  "what": "the compact scorer's block membership (seq_blk^T seq_tok, F16 x F32, K = the ubatch's sequences) went to hipBLAS, which loads a kernel from disk the first time it meets a shape",
+  "before_ms": "272.4 in the first 3-token graph, 0.03 afterwards (STRIX_NODE_TIMING, node_631 [2752,3])",
+  "after_ms": 0.018,
+  "fix": "apply_small_k_membership: one thread an output element, the K products summed in order; exact for 0/1 membership"
+ },
+ "gufo": {
+  "their_table": "docs/models/qwen3.8-flash-next/BENCHMARKS.md: AR 25.85 / 45.70 / 76.29 / 95.66 / 108.67 tok/s for 1/2/4/6/8 users, 4096 tokens each, the same prompt for every user; their llama.cpp baseline (b11069) 22.34 / 37.08 / 54.82 / 65.34 / 68.79",
+  "reading": "identical prompts route every user to the same experts, which their batched kernel reads once: they add 4.3-5.3 ms a user where we add ~8.8 with distinct prompts, ~4.5 of it expert weights that distinct prompts do not share; one user is the same (25.85 against 23.8-26.0)"
+ },
+ "checks": "the 18.6K-token equivalence probe (one slot, f16, MTP off) is bit for bit 0.2.0; a 40-turn agent workload on four slots logs no warning; no GGML_ASSERT in any multi-stream run; release gates in tmp/kvr/gates_021.out"
+}

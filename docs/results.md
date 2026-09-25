@@ -253,13 +253,32 @@ they are instead of gathering them (3 MB a sequence a layer) and its output proj
 0.2.0 is not bitwise 0.1.17: the inject's partial sums, the GDN's scaled state and the small F32 GEMMs add
 in another order, and this model amplifies a last-bit difference. The 18.6K-token equivalence probe gives
 the same 48 tokens, but its first token at probability 0.925 against 0.953. Perplexity at 8K context over
-8 chunks: 2.6811 against 2.6880 (f16), 2.6927 with a q8_0 cache.
+8 chunks: 2.6811 against 0.1.17's 2.6841 (f16), 2.6927 against 2.6951 (q8_0); on the 09-17 gate
+(`corpus/ppl-en-code.txt`, ctx 4096, 6 chunks, ubatch 512) 2.4730 against 2.4741.
 `STRIX_HC_INJECT_FUSE=0 STRIX_GDN_R16=0 STRIX_SKINNY_F32=0 STRIX_MMB_F32_MIN_T=512` gives 0.1.17's output
 bit for bit. The release checks found one real bug on the way: the two copy fusions read their source
 while they write, and with a q8_0 cache the source was the dequantized f16 copy in the compute buffer,
 whose memory the allocator had already given to the fused output (perplexity 9.75). `graph_optimize` now
 keeps the source allocated until the output is computed, and the dispatch refuses overlapping memory.
 Details: `docs/results/prefill-kernels-20260925.json`.
+
+**Several conversations at once (0.2.1, 2026-09-25).** After 0.2.0 three conversations decoding together
+got 34 tok/s summed with MTP on, less than with it off (46). Per step, with speculation off and ~4K tokens
+each (`LLAMA_GRAPH_TIMING=1`), the GPU spends 33.8 ms plus ~8.8 ms for every further conversation - ~4.5
+of it the weights of the ten experts a new token routes to, read at the memory's bandwidth, the rest
+the per-sequence GDN, sparse-attention and dispatch work - and the host 7.6-10.6 ms. With MTP the
+drafts of the conversations came out of different lengths, and the hybrid memory runs a batch as
+ubatches with the same tokens for every sequence: 19% of the steps became two or three passes of the
+whole model, each a graph shape the HIP graph cache had not seen (a rebuild of ~28 ms and 8500 separate
+launches), and took 35% of the time. `apply_spec_even_drafts` gives the drafts of one step one length:
+three conversations at 4K tokens 34.3 -> 45.7 tok/s, at 20K 39.6 -> 45.7; two 39-42, where they had
+swung between 26 and 41; four, which do not draft, 49.4 / 49.9 against 48.6 / 50.3; one unchanged.
+The same round found a 272 ms stall in the first step three conversations decoded together: the
+compact scorer's block-membership product (K = the number of sequences) went to hipBLAS, which loads a
+kernel from disk on first use of a shape; `apply_small_k_membership` gives it a kernel of its own,
+0.02 ms and exact. gufo-org/gufo's multi-user table sends every user the same prompt, so all route to
+the same experts and read them once; it adds 4.3-5.3 ms a user where we add ~8.8 with distinct prompts.
+Details: `docs/results/multi-stream-20260925.json`.
 
 ## Correctness
 

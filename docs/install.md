@@ -262,6 +262,17 @@ conversations generate. Summed over the conversations, ~20K tokens each, q8_0 K/
 With speculation the random samples decide how many drafts are accepted, so single runs spread by
 +/-10%; each entry is the median of three. Measured in `docs/results/concurrency-20260924.json`.
 
+Since 0.2.1 the drafts of one step are also the same length for every conversation
+(`STRIX_SPEC_EVEN_DRAFTS`; `=0` drafts as before). The drafter stops a conversation's draft at its first
+unconfident token, so two conversations could draft 2 and 1 tokens, and the model's hybrid memory runs a
+batch as ubatches with the same number of tokens for every sequence: the verify became two or three
+passes of the whole model, each a shape the HIP graph cache had not seen - 200-440 ms where an even
+batch takes ~120. Now a conversation that turns unconfident keeps drafting while another is still
+confident, and all are cut to the longest confident run. Three conversations at 4K tokens each went
+from 34.3 tok/s summed with drafting (43.9 without) to 45.7; at 20K from 39.6 to 45.7; two
+conversations, which had swung between 26 and 41, give 39-42. Measured in
+`docs/results/multi-stream-20260925.json`.
+
 ### Freed cache cells are zeroed
 
 A cell of the KV cache that a conversation gives up - evicted to disk, rewound, a draft token the next
@@ -291,7 +302,7 @@ back as before, and the first draft after them starts from zeros.
 
 0.2.0's prefill kernels add in a different order in four places: the hyper-connection inject's partial
 sums, the gated delta net's decay-scaled state, and the small F32 products (two kernels). The accuracy is
-the same - perplexity at 8K context 2.6811 against 0.1.17's 2.6880 - but this model amplifies a last-bit
+the same - perplexity at 8K context 2.6811 against 0.1.17's 2.6841 - but this model amplifies a last-bit
 difference, so an answer can part from 0.1.17's where two tokens were nearly tied. Setting
 `STRIX_HC_INJECT_FUSE=0 STRIX_GDN_R16=0 STRIX_SKINNY_F32=0 STRIX_MMB_F32_MIN_T=512` in the server's
 environment gives 0.1.17's output bit for bit, at 0.1.17's prefill speed for those kernels. Measured in
