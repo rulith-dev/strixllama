@@ -280,6 +280,18 @@ kernel from disk on first use of a shape; `apply_small_k_membership` gives it a 
 the same experts and read them once; it adds 4.3-5.3 ms a user where we add ~8.8 with distinct prompts.
 Details: `docs/results/multi-stream-20260925.json`.
 
+**First-use stalls in a chat (0.2.2, 2026-09-25).** The new part of a chat turn is usually 17-511 tokens,
+and in a batch that size the sparse-attention indexer's BF16 projections went to hipBLAS, which loads
+each GEMM kernel from disk the first time it meets a shape: a second turn's 38-token batch took 572 ms
+instead of 200. The MTP draft head's Q6_K projection did the same above 256 columns (208 ms in the
+draft's first prompt batch). `apply_bf16_mid_batches` and `apply_q6k_mmq_rdna35` keep both on this
+fork's kernels. A five-turn chat on a fresh server, two runs of each build: the first message's time to
+first token 4.34 / 4.95 s -> 3.52 / 3.98 s, the second turn's 1.50 / 1.59 s -> 1.10 / 1.19 s; later
+turns differ with the answers. An 18.6K prompt in one batch is bitwise 0.2.1; perplexity at 8K context
+is 2.6814 against 2.6811, from the perplexity tool's 8192-row output projection now on MMQ (2.6811 with
+`STRIX_MMQ_Q6K_ANY=0`; the server's are 1-16 rows). Details:
+`docs/results/chat-ttft-20260925.json`.
+
 ## Correctness
 
 Two bugs that produced wrong output rather than slow output, both found late because the standard

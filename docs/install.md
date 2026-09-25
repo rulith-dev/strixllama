@@ -308,6 +308,18 @@ difference, so an answer can part from 0.1.17's where two tokens were nearly tie
 environment gives 0.1.17's output bit for bit, at 0.1.17's prefill speed for those kernels. Measured in
 `docs/results/prefill-kernels-20260925.json`.
 
+### Output against 0.2.1
+
+0.2.2 takes two kinds of small product off hipBLAS, whose GEMM kernels load from disk the first time
+it meets a shape: the sparse-attention indexer's BF16 projections in batches of 9 to 511 tokens now run
+on the MMB kernel, and Q6_K weights (the draft head's, and the output projection's) on MMQ at every
+width. Such a batch - the new part of most chat turns - is summed in another order, so an answer can
+part from 0.2.1's where two tokens were nearly tied; a prompt that arrives as one batch of 512 tokens
+or more gives 0.2.1's output bit for bit. The perplexity tool asks the output projection for 8192 rows at
+a time, which now take MMQ with its quantized activations: perplexity at 8K context 2.6814 against
+2.6811 (the server asks for at most 16 rows, which MMQ already took). `STRIX_MMB_BF16_MIN_T=512
+STRIX_MMQ_Q6K_ANY=0` in the server's environment gives 0.2.1's routing back.
+
 ### Shared GPU memory is the display driver's decision
 
 Nothing here sets it. Up to 0.1.14 the manager set `GGML_HIP_ENABLE_UNIFIED_MEMORY` and, after a

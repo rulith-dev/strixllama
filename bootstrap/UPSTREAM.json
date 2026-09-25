@@ -17,10 +17,11 @@
   "ggml/src/ggml-cuda/hc-cn.cuh": "a53b3f583bc0783ccfe8b924177bcfa24097b9021c7c1b681376fdd3860de6d0",
   "ggml/src/ggml-cuda/idx-relu-sum.cu": "7a93d811c6d1ebaa0d1072d7755b2b0384396164bed602fe9162d54665edc97b",
   "ggml/src/ggml-cuda/idx-relu-sum.cuh": "8cef06a34fa18b7b753b1d0ce4cc04f51a7373fd4efb2b5148e245fb66cfeffd",
-  "ggml/src/ggml-cuda/mmb.cu": "6f7e33759e4b6d2c4727806ae23a2bac95a98816f987c2da858d6c11ca846a6c",
+  "ggml/src/ggml-cuda/mmb.cu": "7afc5a813a8af1b6965ca7f1ff9269f368c9b94787211b33cb45bb3948b7e986",
   "ggml/src/ggml-cuda/mmb.cuh": "e39d737aab747c797f836c340798cdbc368c8c2147d5b0990fbabedaa6d5f8f7",
   "ggml/src/ggml-cuda/mmid.cu": "81a71f35f96d2cbd19afafb8de89884010e4eef1c986a20991f177355d3b3924",
   "ggml/src/ggml-cuda/mmq-load-tiles.cuh": "0a43a30415c57c7d14d5f1cb03789fbd12850fa00cee9f7fb841d952b84c1484",
+  "ggml/src/ggml-cuda/mmq.cu": "afa9ca158fc00b2eddf386677950640796d0a6288f2a7e6b4770d377a5a52874",
   "ggml/src/ggml-cuda/mmq.cuh": "fc09981f738c1c8458bc1e0298b49d4adf19386cfd45e893587b218d4db1e4c3",
   "ggml/src/ggml-cuda/mmvq.cu": "29ecfbe9feabd762c8781af0a9074c8484b1356a6359dc2e42152c56bc36a101",
   "ggml/src/ggml-cuda/ple-conv.cu": "c885af63df027b0390de9915bbf51073c6205414045c35937c6c42f3eb980958",
@@ -120,6 +121,10 @@
   "ggml/src/ggml-cuda/mmq-load-tiles.cuh": {
    "git_blob": "7f00bad943e23e4c8e530125f9b23a4a2ff87a63",
    "sha256": "f1adb201fa40087e294c40887e62f583f6a7adf40ddca542a735774742e0ae2c"
+  },
+  "ggml/src/ggml-cuda/mmq.cu": {
+   "git_blob": "dc9e4f24ed2ee6b44b26c494b68f5bd56571e1c4",
+   "sha256": "a25c2e4a64d2ff2198fbb0e6e20b6316640d3c1a108aac6210931dc154f7ebf1"
   },
   "ggml/src/ggml-cuda/mmq.cuh": {
    "git_blob": "200f5c3273ec85087b00d0109500b593f00839c8",

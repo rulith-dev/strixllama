@@ -477,3 +477,13 @@ No new files in the delta (51: 47 modified, 4 added); replay 51 / 51, 54 patches
 |---|---|---|
 | `apply_spec_even_drafts` | `speculative.cpp`, `server-context.cpp` | the drafts of one speculative step are the same length for every conversation (`STRIX_SPEC_EVEN_DRAFTS`): the MTP drafter keeps a sequence that turns unconfident drafting while another is still confident and cuts all to the longest confident run; the server cuts every draft to the shortest when a generating slot drafted nothing, unless one replays accepted tokens. The hybrid memory ran a verify of uneven drafts as ubatches of equal tokens per sequence, two or three passes of the whole model in shapes the graph cache had not seen: three conversations at 4K tokens 34.3 -> 45.7 tok/s summed |
 | `apply_small_k_membership` | `ggml-cuda.cu` | the compact scorer's block-membership product (F16, K = the ubatch's sequences) on a kernel of one thread an output instead of hipBLAS, which loaded a kernel from disk on first use of each shape (272 ms). Exact: the membership is 0 or 1. `STRIX_SMALL_K=0` uses hipBLAS |
+
+## Addendum 2026-09-25: 0.2.2
+
+`mmq.cu` joins the delta (52: 48 modified, 4 added); replay 52 / 52, 56 patches. Both patches take a
+product off hipBLAS, which loads each GEMM kernel from disk the first time it meets a shape.
+
+| patch | files | what |
+|---|---|---|
+| `apply_bf16_mid_batches` | `mmb.cu` | BF16 weights (the sparse-attention indexer's projections) on the MMB kernel from 9 columns (`STRIX_MMB_BF16_MIN_T`), as F32 weights since 0.2.0: `mul_mat_f` takes up to 16 columns and MMB took 512 on, so a batch of 17-511 tokens - the new part of most chat turns - went to hipBLAS. A 38-token batch 572 -> 200 ms the first time |
+| `apply_q6k_mmq_rdna35` | `mmq.cu` | Q6_K on MMQ at every width on RDNA3.5 (`STRIX_MMQ_Q6K_ANY=0`: upstream's 256): the draft head's `attn_v` stalled 208 ms in the draft's first prompt batch, and a prompt's last batch is a new width almost every time. The target's Q6_K output projection gets at most 16 rows from the server, which MMQ already took; the perplexity tool's 8192 now take MMQ too (activations quantized): perplexity at 8K 2.6814 against 2.6811 |

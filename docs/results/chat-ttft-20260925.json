@@ -1,0 +1,46 @@
+{
+ "what": "Time to the first token through a five-turn chat on a fresh server: 0.2.1 against 0.2.2 (apply_bf16_mid_batches, apply_q6k_mmq_rdna35)",
+ "date": "2026-09-25",
+ "machine": "Ryzen AI Max+ 395, 128 GB, 96 GB carve, Windows 11",
+ "model": "Qwen3.8-Flash-Next UD-IQ4_XS + MTP head (IQ4_XS output), f16 K/V, MTP on (3 drafts), one slot",
+ "command": "python tmp/kvr/with_server.py --runtime <rt> --name g22_chat --set parallel=1 -- python tmp/kvr/chat_ttft.py --first-chars 12000 --turn-chars 1500 --turns 5 --max-tokens 48 --offset 30000",
+ "protocol": "chat completions, thinking off, greedy; a 3046-token first message, then 546-687-token user turns; the server's prompt_ms per turn (to the first token). Runs alternate 0.2.1 / 0.2.2; the installer was building on the CPU at the same time, for both.",
+ "prompt_ms": {
+  "0.2.1": [
+   [
+    4947.0,
+    1585.1,
+    1200.0,
+    1012.4,
+    1161.4
+   ],
+   [
+    4339.7,
+    1501.2,
+    1066.8,
+    993.6,
+    1125.0
+   ]
+  ],
+  "0.2.2": [
+   [
+    3983.2,
+    1187.3,
+    1130.6,
+    1353.9,
+    1213.6
+   ],
+   [
+    3517.9,
+    1100.3,
+    1025.1,
+    1048.6,
+    904.7
+   ]
+  ]
+ },
+ "reading": "The first message and the second turn gain 0.4-1.0 s: the second turn's first batch (38 tokens, up to its user message) no longer loads hipBLAS's BF16 kernels, and the draft's first prompt batch no longer loads its Q6_K one. From the third turn the answers differ (the batches of 9-511 tokens are summed in another order), so the turns are no longer the same work.",
+ "trace": "STRIX_DECODE_TIMING=2 on a development build: the 38-token batch of a second turn took 572 ms (cpu 437 of it in hipBLAS's first calls) and 200 ms with BF16 on MMB; no BLAS_TRACE line was left in a four-turn chat.",
+ "equivalence": "an 18.6K prompt in one batch, f16, MTP off: text and top-5 probabilities identical to 0.2.1 (tmp/fusion_equiv_probe.py)",
+ "perplexity": "8K context, 8 chunks, f16: 2.6814 against 0.2.1's 2.6811; 2.6811 on this build with STRIX_MMQ_Q6K_ANY=0 - the perplexity tool asks the Q6_K output projection for 8192 rows, which now take MMQ (quantized activations) instead of hipBLAS; the server asks for 1-16 rows, which MMQ already took"
+}
