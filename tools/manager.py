@@ -699,18 +699,20 @@ def runtime_environment(cfg):
         env['STRIX_PROMPT_CACHE_DIR'] = str(DATA / 'prompt-cache')
         env['STRIX_PROMPT_CACHE_MIB'] = str(cfg.get('prompt_cache_disk_mib') or PROMPT_CACHE_DISK_MIB)
         env['STRIX_PROMPT_CACHE_BLOCK'] = str(PROMPT_CACHE_BLOCK_TOKENS)
-    # A draft pays for itself on one conversation, not on several at once: each drafted token is verified, and
+    # A draft pays for itself on one conversation, less on several at once: each drafted token is verified, and
     # in this mixture of experts a verified token reads ~10 more experts' weights, which conversations decoding
-    # together cannot share. So the server drafts draft_max tokens for one generating slot, at most 2 for two
-    # or three, none from four on (STRIX_SPEC_DRAFT_BY_SLOTS). Measured at ~20K tokens each, tok/s summed over
-    # the conversations, three draft tokens against the cap: 38.7 alone (unchanged), 35.7 -> ~40 for two,
-    # 40.5 -> 44.7 for three, 37.9 -> 49.4 for four.
+    # together cannot share. So the server drafts draft_max tokens for one generating slot, at most 2 for two to
+    # four, none from five on (STRIX_SPEC_DRAFT_BY_SLOTS). Measured 2026-09-26, tok/s summed: four conversations
+    # 55.7 without drafts -> 62.6 with 2 at ~4K tokens each, 50.6 -> 56.1 at ~20K; six 64.4 without, 60.7 with 2;
+    # eight 70.7 without, 64.0 with 2 (greedy). Before 0.2.3's small-batch router and expert kernels four had been
+    # better without.
     if cfg.get('mtp') and cfg.get('parallel', 1) > 1:
         dm = int(cfg['draft_max'])
-        env['STRIX_SPEC_DRAFT_BY_SLOTS'] = ','.join(str(x) for x in (dm, min(dm, 2), min(dm, 2), 0))
-    # Several conversations decoding together: from seven tokens a step the routed experts take the tiled kernel,
-    # which dequantizes an expert once for all its tokens (eight conversations +6% summed). Not with one slot, where
-    # the limit stays upstream's and the results stay those of earlier versions.
+        env['STRIX_SPEC_DRAFT_BY_SLOTS'] = ','.join(str(x) for x in (dm, min(dm, 2), min(dm, 2), min(dm, 2), 0))
+    # Several conversations decoding together: from seven tokens a step the routed experts leave the vector kernel's
+    # single pass - for chunks of it up to 16 tokens since 0.2.3, for the tiled kernel past that, which dequantizes an
+    # expert once for all its tokens (eight conversations +6% summed, measured before the chunks). Not with one slot,
+    # where the limit stays upstream's and the results stay those of earlier versions.
     if cfg.get('parallel', 1) > 1:
         env['STRIX_MOE_VEC_MAX'] = '6'
     if not bundled_rocm():

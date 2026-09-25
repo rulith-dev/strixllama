@@ -12,7 +12,7 @@ acceptance — it says so. See [measuring.md](measuring.md) before comparing any
 | Memory | 128 GB unified, **96 GB carved to the GPU** (Windows is left 31.6 GB) |
 | Power | 140 W |
 | OS | Windows 11 |
-| Runtime | `pwilkin/llama.cpp` @ `f5daaa3` + this patch set, built against TheRock ROCm 10.1 |
+| Runtime | `pwilkin/llama.cpp` @ `f5daaa3` + this patch set, built against TheRock ROCm 10.2 (10.1 up to 0.2.2) |
 | Model | Qwen3.8-Flash-Next 125B-A6B, Unsloth UD-IQ4_XS, 93.7 GB |
 | Server flags | ctx 262144, batch/ubatch 8192, `-np 1`, flash attention on, KV f16, MTP draft, `--load-mode none --lazy-mode on-direct` |
 
@@ -32,6 +32,7 @@ full prefill, **on a freshly started server** (see the image note below — that
 | decode, 85K context | **28.7 ms/token** (34.9 tok/s) | 29.45 / 28.25 / 28.25, draft acceptance 68-69%, 2.99 tokens per pass |
 | decode, short context | **26.8 ms/token** (37.4 tok/s) | 27.47 / 26.37 / 26.42, acceptance 60%, 2.70 tokens per pass |
 | image input | works | Qwen3-VL projector, 904 MB |
+| decode, 3 / 4 conversations at once | **55.7 / 60.4 tok/s** summed | ~4K tokens each, default sampling, six rounds each, 0.2.3 |
 
 The first run of each group is a warm-up: 29.45 against 28.25 twice, 27.47 against 26.4 twice. The
 prefill figures need no such caveat — runs land within 1-3% of each other.
@@ -42,7 +43,9 @@ the same text:
 where the text is llama.cpp's own docs, tool READMEs and `src/llama-*.cpp` concatenated (95,582
 tokens). 0.1.17 gave 999.1 / 965.5 / 992.4 in between; 0.1.9 982.1 / 979.6 / 988.7 (2026-09-23),
 0.1.8 888.3 / 892.9 / 889.7, and the 2026-09-19 build 886.2 / 883.7 / 887.6 on 85K tokens of prose.
-The decode rows are older; 0.2.0 does not change decode (below).
+The decode rows are older; 0.2.0 does not change decode (below). The row of several conversations is
+0.2.3's, measured 2026-09-26 with the server's default sampling and the prompts cached; one conversation
+gets ~38 tok/s there, so three give 1.47× and four 1.59× (below).
 
 ### A slot that has served an image decodes ~7% slower until it is cleared
 
@@ -291,6 +294,28 @@ turns differ with the answers. An 18.6K prompt in one batch is bitwise 0.2.1; pe
 is 2.6814 against 2.6811, from the perplexity tool's 8192-row output projection now on MMQ (2.6811 with
 `STRIX_MMQ_Q6K_ANY=0`; the server's are 1-16 rows). Details:
 `docs/results/chat-ttft-20260925.json`.
+
+**Several conversations at once, the verify step (0.2.3, 2026-09-26).** A verify step of several
+conversations carries 5-16 tokens, and two of its products fell off the vector kernel there onto tiles
+they barely filled. The MoE router, an F32 [2560 × 512], took MMB's 128-row tiles from 9 columns: four
+workgroups for the whole GPU, ~250 µs a product. The routed experts past the vector kernel's limit (4
+tokens for IQ3_S, 6 for IQ4_NL) took MMQ, which stages a tile per expert for the one or two tokens an
+expert gets: a gate/up product at nine tokens took 397 µs where four take 90, the down 499.
+`apply_small_batch_decode` runs both on the vector kernel over chunks of the batch (the router up to 32
+columns, the experts in chunks of 4 up to 16 tokens): gate/up 397 → 289 µs, down 499 → 387, and a
+nine-token verify step 120-123 → 103-104 ms. With that, drafting pays at four conversations (62.6 tok/s
+summed with drafts of 2 against 55.7 without; at ~20K tokens each 56.1 against 49.8-51.4) and still
+loses from six (60.7 against 64.4; eight 64.0 against 70.7), so the manager's cap is now 3,2,2,2,0. The
+ROCm pin moves to TheRock 10.2.0a20260925:
+perplexity 2.6814 on both, the 18.6K equivalence probe bitwise, prefill and one conversation the same,
+three and four conversations +3-4%. 0.2.2 against 0.2.3, alternating, three passes of two rounds with
+the server's default sampling, ~4K tokens each, 512 tokens a stream: one conversation unchanged at ~38
+tok/s, three 47.7 → 55.7 summed (1.26× → 1.47× one), four 55.4 → 60.4 (1.46× → 1.59×). 0.2.3's
+acceptance at three and four moves between ~65% and ~72% from round to round (0.2.2's at three stays at
+66-67%), so its single runs spread more: 52.9-57.4 and 58.4-63.2. At three the GPU is busy ~89% of the
+time, and a step still adds ~8 ms for every further token it verifies, ~5 of it expert weights read
+near the memory's bandwidth; `--backend-sampling` measured nothing. Details:
+`docs/results/multi-stream-20260926.json`.
 
 ## Correctness
 

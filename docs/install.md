@@ -50,21 +50,25 @@ This creates `toolchain/rocm-venv`, installs the ROCm SDK into it as wheels, exp
 (`rocm-sdk init` — the wheel is a tarball until then, and a bootstrap that skipped this had no
 compiler and no device bitcode), and downloads ninja. About 5 GB.
 
-**Use TheRock ROCm 10.1, not the system ROCm 7.1.** Same source, same flags: 458 → 735 t/s, +60%.
+**Use TheRock ROCm, not the system ROCm 7.1.** Same source, same flags: 458 → 735 t/s, +60% (TheRock 10.1).
 This is the single largest factor in the prefill numbers and it is not a code change. Windows wheels
 are the only form AMD ships — the native tarballs are Linux-only.
 
 ### The pin will expire, and you should plan for it
 
-`ROCM_VERSION` is pinned to `10.1.0a20260910`, which is what every number in this repository was
-measured on. It comes from a **nightly index with a rolling window of about 27 days**, and
-`10.1.0a20260910` is the last nightly of the 10.1 series — 10.2 started the next day. So:
+`ROCM_VERSION` is pinned to `10.2.0a20260925`. It comes from a **nightly index with a rolling window
+of about 27 days**, so:
 
 ```bash
 python bootstrap/bootstrap.py --toolchain --rocm-version <a version the index still has>
 ```
 
 `--toolchain` prints the versions the index currently offers when the pin fails to resolve.
+
+Up to 0.2.2 the pin was `10.1.0a20260910`, the last nightly of the 10.1 series, and the numbers up to
+then were measured on it. On the same source 10.2 gives the same perplexity (2.6814 at 8K context), the
+same output bit for bit on an 18.6K-token prompt, the same prefill and single-conversation decode, and
+3-4% more with three or four conversations decoding (`docs/results/multi-stream-20260926.json`).
 
 **Anything other than the pinned version is untested here.** A different SDK can change numerics, and
 this project has twice shipped a regression that a short perplexity run could not see. If you move
@@ -77,7 +81,7 @@ them in a month:
 ```bash
 toolchain/rocm-venv/Scripts/python.exe -m pip download --pre \
   --index-url https://nightly.repo.amd.com/rocm/whl-next/ \
-  "rocm[libraries,devel,device-gfx1151]==10.1.0a20260910" -d toolchain/rocm-wheels
+  "rocm[libraries,devel,device-gfx1151]==10.2.0a20260925" -d toolchain/rocm-wheels
 ```
 
 and install from that directory afterwards with `--no-index --find-links toolchain/rocm-wheels`.
@@ -245,12 +249,13 @@ Speculative decoding drafts tokens that the next step verifies. For one conversa
 +74% (38.7 against 22.3 tok/s at 20K tokens). With several at once it costs more than it returns: every
 verified token makes the step read the weights of about ten more of this model's 512 experts, and
 conversations decoding together cannot share them - four conversations with three draft tokens verify
-16 tokens a step, which touch ~138 experts where 4 tokens touch ~39. The expert kernels already run at
-the memory's bandwidth there (251-261 GB/s), so the only lever is to verify fewer tokens. The server
-therefore drafts `draft_max` tokens while one conversation generates, at most 2 while two or three do,
-and none from four on (`STRIX_SPEC_DRAFT_BY_SLOTS`, set by the manager when MTP is on and there is more
-than one slot). The draft model keeps processing every step, so drafting resumes as soon as fewer
-conversations generate. Summed over the conversations, ~20K tokens each, q8_0 K/V:
+16 tokens a step, which touch ~138 experts where 4 tokens touch ~39. The expert kernels ran at the
+memory's bandwidth in the cases 0.1.17 measured (251-261 GB/s), so the lever was to verify fewer tokens.
+The server therefore drafts `draft_max` tokens while one conversation generates, at most 2 while two to four do,
+and none from five on (`STRIX_SPEC_DRAFT_BY_SLOTS`, set by the manager when MTP is on and there is more
+than one slot; up to 0.2.2 none from four on). The draft model keeps processing every step, so drafting
+resumes as soon as fewer conversations generate. 0.1.17 measured, summed over the conversations, ~20K
+tokens each, q8_0 K/V:
 
 | generating | 3 draft tokens | 2 | 1 | none | the cap |
 |---|---|---|---|---|---|
@@ -261,6 +266,19 @@ conversations generate. Summed over the conversations, ~20K tokens each, q8_0 K/
 
 With speculation the random samples decide how many drafts are accepted, so single runs spread by
 +/-10%; each entry is the median of three. Measured in `docs/results/concurrency-20260924.json`.
+
+Since 0.2.3 a verify step of several conversations costs less, and drafting pays at four. Two of its
+products fell off the vector kernel onto tiles they barely filled once the step carried more than a few
+tokens: the MoE router, an F32 [2560 × 512], took the MMB kernel's 128-row tiles from 9 columns - four
+workgroups for the whole GPU, ~250 µs a product - and the routed experts past the vector kernel's limit
+(4 tokens for IQ3_S, 6 for IQ4_NL) took MMQ, which stages a tile per expert for the one or two tokens an
+expert gets. Both now run the vector kernel over chunks of the batch: F32 weights up to 32 columns
+(`STRIX_F32_VEC_CHUNK_MAX`), the experts in chunks of 4 tokens (`STRIX_MOE_VEC_CHUNK`, `=0` off) up to 16
+(`STRIX_MOE_VEC_CHUNK_MAX_T`). A nine-token verify step went from 120-123 to 103-104 ms. At ~4K tokens
+each, four conversations drafting 2 then got 62.6 tok/s summed against 55.7 without drafts (at ~20K
+tokens each 56.1 against 49.8-51.4), while six and eight still lose with drafts (60.7 against 64.4, 64.0
+against 70.7). Against 0.2.2, with the server's default sampling: three conversations 47.7 → 55.7 tok/s,
+four 55.4 → 60.4, one unchanged at ~38. Measured in `docs/results/multi-stream-20260926.json`.
 
 Since 0.2.1 the drafts of one step are also the same length for every conversation
 (`STRIX_SPEC_EVEN_DRAFTS`; `=0` drafts as before). The drafter stops a conversation's draft at its first
@@ -319,6 +337,16 @@ or more gives 0.2.1's output bit for bit. The perplexity tool asks the output pr
 a time, which now take MMQ with its quantized activations: perplexity at 8K context 2.6814 against
 2.6811 (the server asks for at most 16 rows, which MMQ already took). `STRIX_MMB_BF16_MIN_T=512
 STRIX_MMQ_Q6K_ANY=0` in the server's environment gives 0.2.1's routing back.
+
+### Output against 0.2.2
+
+0.2.3 runs the MoE router and the routed experts of a batch of 5-32 tokens on the vector kernel, over
+chunks of the batch. Such a batch - the verify step of several conversations, a short chat turn, the
+last few tokens of a prompt - is summed in another order, so an answer can part from 0.2.2's where two
+tokens were nearly tied. One conversation's decode (at most four tokens a step) and batches of more than
+32 tokens are unchanged: an 18.6K-token prompt gives 0.2.2's output bit for bit, and perplexity at 8K
+context is 2.6814 on both. `STRIX_F32_VEC_CHUNK_MAX=0 STRIX_MOE_VEC_CHUNK=0` in the server's
+environment gives 0.2.2's routing back.
 
 ### Shared GPU memory is the display driver's decision
 

@@ -74,6 +74,7 @@ PATCH_ORDER = [
     "apply_gdn_direct_rows", "apply_ple_unbuffered_cache", "apply_prefill_kernels_020",
     "apply_spec_even_drafts", "apply_small_k_membership",
     "apply_bf16_mid_batches", "apply_q6k_mmq_rdna35",
+    "apply_small_batch_decode",
 ]
 
 # The ROCm SDK is installed as Python wheels, which is the only form AMD ships for Windows - the
@@ -81,7 +82,7 @@ PATCH_ORDER = [
 # measured on. See docs/install.md: this is a NIGHTLY index with a rolling window of about 27 days,
 # so a pin eventually stops resolving. --rocm-version overrides it.
 ROCM_INDEX = "https://nightly.repo.amd.com/rocm/whl-next/"
-ROCM_VERSION = "10.1.0a20260910"
+ROCM_VERSION = "10.2.0a20260925"
 ROCM_EXTRAS = "rocm[libraries,devel,device-gfx1151]"
 NINJA_URL = "https://github.com/ninja-build/ninja/releases/download/v1.13.1/ninja-win.zip"
 
