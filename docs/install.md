@@ -287,6 +287,16 @@ conversations, and zeros when it does not belong; the same prompt twice gives th
 the same acceptance. Conversations the disk tier stored before 0.1.17 have no such state: they come
 back as before, and the first draft after them starts from zeros.
 
+### Output against 0.1.17
+
+0.2.0's prefill kernels add in a different order in four places: the hyper-connection inject's partial
+sums, the gated delta net's decay-scaled state, and the small F32 products (two kernels). The accuracy is
+the same - perplexity at 8K context 2.6811 against 0.1.17's 2.6880 - but this model amplifies a last-bit
+difference, so an answer can part from 0.1.17's where two tokens were nearly tied. Setting
+`STRIX_HC_INJECT_FUSE=0 STRIX_GDN_R16=0 STRIX_SKINNY_F32=0 STRIX_MMB_F32_MIN_T=512` in the server's
+environment gives 0.1.17's output bit for bit, at 0.1.17's prefill speed for those kernels. Measured in
+`docs/results/prefill-kernels-20260925.json`.
+
 ### Shared GPU memory is the display driver's decision
 
 Nothing here sets it. Up to 0.1.14 the manager set `GGML_HIP_ENABLE_UNIFIED_MEMORY` and, after a

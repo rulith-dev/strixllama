@@ -9,39 +9,47 @@
   "common/speculative.cpp": "0cf766d5d216c236015f2dc4f83ee9892546eba622042bf3b07bce8da6f166ac",
   "ggml/src/ggml-alloc.c": "6175a587a0c18b178180bda13849731ae71800a7ee463c9fbb00becdd7ab5220",
   "ggml/src/ggml-cuda/cpy.cu": "e3b2d6e5eb2182be9c105d716b48abaf5c10f9de0567bfc783e73c7b532502f1",
+  "ggml/src/ggml-cuda/gated_delta_net.cu": "f57534fef01c43143936cff59a8cdd5fb7a783d7473c3c49ec28b8b9c7fe1822",
+  "ggml/src/ggml-cuda/gated_delta_net.cuh": "1883dcc8240f3125b62cf4910fb2006be0821fc99c0d4d3819ebff26bdd7a4a5",
   "ggml/src/ggml-cuda/gdn-conv.cu": "eced61710a178ba5bc07985775e64711f82c9173cb57d05d3054c46ddaa759bb",
-  "ggml/src/ggml-cuda/ggml-cuda.cu": "6a4f7fc10b491c72fcc503e60565fa71af0c5889169d2568e35983b0ffd64ab1",
-  "ggml/src/ggml-cuda/mmb.cu": "c90cb84bf8a886bca4a5a7ae3c4fdaec36717b030924cf7a94f4ce6cbaa61d65",
-  "ggml/src/ggml-cuda/mmb.cuh": "1bff81ef7a2b088fa32c886462156bbcb7c33bb689a9fbf71d0a88c57314238e",
+  "ggml/src/ggml-cuda/ggml-cuda.cu": "73e28844c0e5ba9760f16a66028a0d36df72ab682bb89a08514894f1522232e2",
+  "ggml/src/ggml-cuda/hc-cn.cu": "6d4170eaefdcdca7575f32c24a2474d6ff88f9abfb23716c1599d7cd7046d926",
+  "ggml/src/ggml-cuda/hc-cn.cuh": "a53b3f583bc0783ccfe8b924177bcfa24097b9021c7c1b681376fdd3860de6d0",
+  "ggml/src/ggml-cuda/idx-relu-sum.cu": "7a93d811c6d1ebaa0d1072d7755b2b0384396164bed602fe9162d54665edc97b",
+  "ggml/src/ggml-cuda/idx-relu-sum.cuh": "8cef06a34fa18b7b753b1d0ce4cc04f51a7373fd4efb2b5148e245fb66cfeffd",
+  "ggml/src/ggml-cuda/mmb.cu": "6f7e33759e4b6d2c4727806ae23a2bac95a98816f987c2da858d6c11ca846a6c",
+  "ggml/src/ggml-cuda/mmb.cuh": "e39d737aab747c797f836c340798cdbc368c8c2147d5b0990fbabedaa6d5f8f7",
   "ggml/src/ggml-cuda/mmid.cu": "81a71f35f96d2cbd19afafb8de89884010e4eef1c986a20991f177355d3b3924",
   "ggml/src/ggml-cuda/mmq-load-tiles.cuh": "0a43a30415c57c7d14d5f1cb03789fbd12850fa00cee9f7fb841d952b84c1484",
   "ggml/src/ggml-cuda/mmq.cuh": "fc09981f738c1c8458bc1e0298b49d4adf19386cfd45e893587b218d4db1e4c3",
   "ggml/src/ggml-cuda/mmvq.cu": "29ecfbe9feabd762c8781af0a9074c8484b1356a6359dc2e42152c56bc36a101",
   "ggml/src/ggml-cuda/ple-conv.cu": "c885af63df027b0390de9915bbf51073c6205414045c35937c6c42f3eb980958",
-  "ggml/src/ggml-cuda/qsa.cu": "786ec820c5152142dcbf6a21dc15232cd0e740fe287d8f059a10ace6a4f10981",
+  "ggml/src/ggml-cuda/qsa.cu": "0b3778cc87d68f9a87fb3f9ca05a9ef00cbaea063e1ae663865d230e9a5e30f0",
+  "ggml/src/ggml-cuda/qsa.cuh": "899fe305633833ea0fa845639ea87f800d483d1c7a31aacef36917bf3acea1f2",
   "ggml/src/ggml-cuda/softcap.cu": "e1c2bc8f06990f5b61cca50f6edb5892576ded44b42c4c00bade0d288c7fb3a0",
   "ggml/src/ggml-cuda/softcap.cuh": "423a18f7e553a56c4482d3284207e53607b8edbd0a0f07882b8fce5a4a0f5ebb",
   "ggml/src/ggml-cuda/strixllama-chain.cu": "729ca26728f7bd624320f5ebee9d65d67bcdcafa9acf26c88b386e6ab202b886",
   "ggml/src/ggml-cuda/strixllama-chain.cuh": "15d9dc25d28d292f2ea7c72e80281694855c847465532991c1060c67a583723f",
   "ggml/src/ggml-cuda/strixllama-getrows-cast.cu": "5019f6b5201fd11d2d77c00a7a4df1ee387813d4acc28455fddd43105ec80a9a",
   "ggml/src/ggml-cuda/strixllama-getrows-cast.cuh": "ed9f51c30db922f743196cca350a1554067fd0fa021f404910ea6bea91d753dc",
+  "ggml/src/ggml-cuda/top-k.cu": "331c59f715fe514f9b422ef03c4725d3649944a50474282ffba49bafc4e06dc0",
   "ggml/src/ggml-cuda/vecdotq.cuh": "3b879a937d5143902db4cae2530529c32fd464dbfb822a7fe31875aba57707ce",
   "include/llama.h": "646aed8696541c2a6dc0b034600fd06a50599d87e13db10448a5f5472b0f2a30",
   "src/llama-context.cpp": "14d0dced1e69aab56d2cd6d00a55cc3688029c2f8739664285813e063cd0a3a9",
-  "src/llama-graph.cpp": "210c5c387fa812b0cf6d14dfeff8d1b4484c574f233049a86c09d199977428e0",
-  "src/llama-graph.h": "c4814656cea3a6f0d28c55bb9dd9f290852a394efbe65c66ce033d55921a6856",
+  "src/llama-graph.cpp": "ee47da90b6ee28f7403b23b6bd482f3eb77ca08567fb1ef65d1e4372a6ac67f3",
+  "src/llama-graph.h": "b5868bd6adc991a54319d1462bdf80bae3f3ce30dad039e7fba7a0747dd8f0fb",
   "src/llama-kv-cache.cpp": "17a46c4f2131b421c6d3a29aac7a82f2e5766024f75c02a0326cc29c8728a675",
   "src/llama-kv-cache.h": "e3c9ab7ffac6a8267e3dafe945fe8f196216353580a06c86e70e732857b4cfa7",
   "src/llama-kv-cells.h": "6cb735c3bee59e564be000c3c8b83e6696974aa106a081790c72d1f4e75db9f4",
-  "src/llama-lazy-reader.h": "4378a2edb78f1c840526e67b7d36d585f71e49cef48502bb618804c0216f417f",
+  "src/llama-lazy-reader.h": "8c4895b934096f353c7844b156f7a8043710f0bb9f3350efa921440f3a49d925",
   "src/llama-memory-hybrid-idx.cpp": "021a9f5336546875e436e70c60b2349aa7aece150970d5c99eb61eb8f5079c00",
   "src/llama-memory-hybrid-idx.h": "feb72dd4dbc54e6d771a2e2a83490d32c1294c2869bf9f47e34296f016a6ad2b",
-  "src/llama-memory-recurrent.cpp": "201b89af2e54b20800090392ba111e7ae29c2d991976040ba6f302e324f1f869",
-  "src/llama-memory-recurrent.h": "f25504b3f27150834f9f74fc48b274e4b1dae3a9ebff7a557ad0a2486d93c369",
-  "src/llama-model.cpp": "ee9b24fcd6227fea4e27dc5322fac0a08254d0483b1b0165767eabbabc9322dc",
+  "src/llama-memory-recurrent.cpp": "14281fa23edc0b190dcc9b76a8b3165ad9da32866751aa35dea1451fac1c87f8",
+  "src/llama-memory-recurrent.h": "d78009b7a82952ac2f760cd335b86c6a5b6ecf26ed36321d3b56400a8a24ea53",
+  "src/llama-model.cpp": "204cb7149c79c71426ee746a5e4517db74837df9efde24b7cdc704a3bae05bf8",
   "src/llama-model.h": "934dfaf7862ed94699692cfe4d93f7a1fbd7b646d4577dbd0ba197ee2f953175",
   "src/models/block-graph.inc": "716077d2dd61f3d7edb94945eaf1cd4aa2bb86f452eff22832d9cf279d55ec07",
-  "src/models/qwen4exp.cpp": "5a05b2de11cd4607b0c42f76f68528636fe470d23523e148baa7fd203ec549ad",
+  "src/models/qwen4exp.cpp": "7695d4687a2c593e8785030dc440c1e3731f16a34dfc294b48b55ccd47f18f97",
   "src/prefix.h": "8ff0afa90c0f8a93411faf13de1d989ee8b8877518be15fcb40d31c464dc4afa",
   "tests/test-backend-ops.cpp": "63b40d1aa142a62032da8bab47b53513b688fe8a18b6980ac07300f672c007c0",
   "tools/server/server-context.cpp": "3cc5e88460141d66d6536ec33913e66a93a4289e40760de8049b1a5099792d04",
@@ -65,6 +73,14 @@
    "git_blob": "fd7ffc0bc55758a119e995f614937b755c8e3c9a",
    "sha256": "db0520aac5613b26956422e7b10253c564f34cec81cbbe90cdf8b28143ba0984"
   },
+  "ggml/src/ggml-cuda/gated_delta_net.cu": {
+   "git_blob": "e8ea34c2b9d15c33bf7b7cd20169fe23ba274372",
+   "sha256": "b4fa81cfef789fabf065252248b0019fc0b9a86aeb33c131bb6a8221a7aa8556"
+  },
+  "ggml/src/ggml-cuda/gated_delta_net.cuh": {
+   "git_blob": "f9bf437067896a97485e21c2907bb7c3bc4df2cf",
+   "sha256": "5a155069868ffb238d90503ae380e68a6d1baa4abb9c0292f369fb0045ffffda"
+  },
   "ggml/src/ggml-cuda/gdn-conv.cu": {
    "git_blob": "fb63047d47463c377ed7123aa0b3836ba8d599ac",
    "sha256": "1c52ba6e621dc9a7b59eaaab06f33ee984a78dbb58038768e9772b587192f335"
@@ -72,6 +88,22 @@
   "ggml/src/ggml-cuda/ggml-cuda.cu": {
    "git_blob": "0dcb7dae4b07885f4672a3ef77cca010c909a329",
    "sha256": "9bd00217b50c554785b2024eb244d49710c6fdd99c264bd461de710fa04eab69"
+  },
+  "ggml/src/ggml-cuda/hc-cn.cu": {
+   "git_blob": "568c040fc948cf01881fa9b7f72f70270b8d7842",
+   "sha256": "4f521c0fc54bcfa42814734f5a78174e08e7b640d55d1482480046dc01abc850"
+  },
+  "ggml/src/ggml-cuda/hc-cn.cuh": {
+   "git_blob": "cd099503e44e6187f41ab5f4c3b9dabd19275a19",
+   "sha256": "4b50f33e0f1e27517b71fb6eb9542d61285efda88690f7ea5eee905960c3f00c"
+  },
+  "ggml/src/ggml-cuda/idx-relu-sum.cu": {
+   "git_blob": "7eca8b1793de6e6723a44ec04c3112342734a6c2",
+   "sha256": "19fd4ca33196a248f7b2fcf6b92483a6de412a0f7bd8b9c1848cced82719f6bd"
+  },
+  "ggml/src/ggml-cuda/idx-relu-sum.cuh": {
+   "git_blob": "6a3ce11798a01287ffa4fe535a5568d47165d4d3",
+   "sha256": "4e792cef84bdc8d5b6cef918b9a13281bbc7c6dbf80528fcb48a2f034c52e65d"
   },
   "ggml/src/ggml-cuda/mmb.cu": {
    "git_blob": "91acc5fca1f369321d2c3433d2f0b16780a96e57",
@@ -105,6 +137,10 @@
    "git_blob": "9b43528278a3be6bd744ed25d2b18983c3570df0",
    "sha256": "9a809b350496f8e00d21063caa0b0ae284ff533bc07540dc930d75da3b4b078a"
   },
+  "ggml/src/ggml-cuda/qsa.cuh": {
+   "git_blob": "3dbfcff3cd8bdda19c2599db48ab905299ece4be",
+   "sha256": "da17c0b412c72b38c91a2cfd2c794e26ae87b8894f3f75d27cf5ff12b1b874e5"
+  },
   "ggml/src/ggml-cuda/softcap.cu": {
    "git_blob": "9f0fa1051cfe0844c5a7bff5c8295ae77bd7e8d6",
    "sha256": "a3ae060b52326da5185ad03ea880255fccd6c6515d979c49b864d00263f2a8d0"
@@ -112,6 +148,10 @@
   "ggml/src/ggml-cuda/softcap.cuh": {
    "git_blob": "6d34fb2bee41684d93504e8a2fae172c993f5e50",
    "sha256": "4187b9b447cdafcce48c5d855f6b614e6637fa1c1138943c8fec8ef415eb0def"
+  },
+  "ggml/src/ggml-cuda/top-k.cu": {
+   "git_blob": "30f8c915c40719b90f990905168725aac1e7f169",
+   "sha256": "e1a2ea41849c390a3510832e2ce3e53f939f4606bebe9aae59004aea1a094ba4"
   },
   "ggml/src/ggml-cuda/vecdotq.cuh": {
    "git_blob": "f2a6f2009c9ac907b6002667a49dcb6c2e75be56",

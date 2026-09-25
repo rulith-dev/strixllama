@@ -1,0 +1,57 @@
+{
+ "date": "2026-09-25",
+ "what": "0.2.0: the rest of a prefill batch (apply_prefill_kernels_020), the gated delta net's states read in place (apply_gdn_direct_rows), unbuffered per-layer-embedding reads with a RAM cache (apply_ple_unbuffered_cache), STRIX_MOE_VEC_MAX=6 with several slots (tools/manager.py)",
+ "setup": "Qwen3.8-Flash-Next UD-IQ4_XS, the manager's profile unless stated (ctx 262144, batch/ubatch 8192, f16 K/V, MTP with 3 draft tokens, sparse attention). 0.2.0 = bin/hip-rocm101 as released; 0.1.17 = its released runtime, run from a copy. The two alternate run by run, each run on a freshly started server.",
+ "prefill_95k_real_text": {
+  "method": "tools/decode_lab.py --model ba09dd01dc9c5fd1df9d --config dectime --words 700 --n 4 --gen 16 --gen-prefix tmp/realtext.txt --gen-prefix-chars 340000 (llama.cpp's docs, tool READMEs and src/llama-*.cpp concatenated: 95,582 tokens); the server's prompt eval rate (tmp/kvr/head_020.sh)",
+  "0.2.0_t_s": [1187.36, 1183.70, 1200.55],
+  "0.1.17_t_s": [999.07, 965.54, 992.44],
+  "median": {"0.2.0": 1187.4, "0.1.17": 992.4, "gain": "+19.6%"}
+ },
+ "real_text_86k_and_decode": {
+  "method": "tools/decode_lab.py --model ba09dd01dc9c5fd1df9d --config base --gen 400 --gen-prefix tmp/realtext.txt --gen-prefix-chars 302000, MTP on, temperature 0 (tmp/kvr/perf_020.sh); before it the lab's random-word probes at 2.3K and 97.5K tokens",
+  "prefill_86122_tokens_real_text_t_s": {"0.2.0": [1160.55, 1119.14, 1143.82], "0.1.17": [978.78, 963.47, 959.45]},
+  "gen_400_tokens_ms_per_token": {"0.2.0": [29.10, 29.67, 29.48], "0.1.17": [29.85, 30.60, 31.47]},
+  "gen_acceptance": {"0.2.0": "257/417 = 62%, 2.80 tokens per pass", "0.1.17": "257/410 = 63%, 2.80 tokens per pass"},
+  "prefill_95187_tokens_random_words_t_s": {"0.2.0": [1177.1, 1116.5, 1161.4], "0.1.17": [959.6, 873.8, 939.8]},
+  "decode_at_97512_random_words_ms_per_token": {"0.2.0": [31.99, 38.73, 34.42], "0.1.17": [35.19, 40.98, 36.23],
+   "note": "acceptance 92% against 81%: the two builds draft differently on random words, so this row is not a like-for-like decode comparison"},
+  "decode_at_2329_tokens_ms_per_token": {"0.2.0": [33.30, 33.54, 34.38], "0.1.17": [32.96, 32.97, 33.43], "acceptance": "33/37 both"}
+ },
+ "decode_per_pass_2k": {
+  "method": "tools/decode_lab.py --config dectime --words 700 --n 128, STRIX_SPEC_TIMING=1; median of the speculative passes after the first two (tmp/kvr/post_020.sh, tmp/kvr/st_summary.py)",
+  "pass_ms": {"0.2.0": [71.0, 66.9], "0.1.17": [68.1, 67.95]},
+  "0.2.0_with_one_switch_off_pass_ms": {"STRIX_MMB_F32_MIN_T=512": 66.8, "STRIX_PLE_UNBUFFERED=0": 67.1, "STRIX_IDX_SCORE=0": 66.1, "STRIX_GDN_GATHER_SKIP=0": 66.9, "STRIX_CONT_SIGMOID=0": 66.3},
+  "reading": "decode is unchanged; the first 0.2.0 run (71.0) is the warm-up of the series. None of the new paths costs decode anything measurable"
+ },
+ "pp2048_gufo_protocol": {
+  "method": "tmp/kvr/gufo_protocol.py single --set mtp=false --depths 0,65536 --tasks prose (2K tokens after a cached prefix, then 128 decoded)",
+  "0.2.0": {"d0": {"pp": 1070.16, "tg": 25.05}, "d65536": {"pp": 905.74, "tg": 22.55}},
+  "0.1.17": {"d0": {"pp": 919.11, "tg": 24.18}, "d65536": {"pp": 739.07, "tg": 22.13}},
+  "mtp_on_d0": {"0.2.0": {"pp": 863.53, "tg": 33.19, "draft": "77/132"}, "0.1.17": {"pp": 801.25, "tg": 33.75, "draft": "77/144"}}
+ },
+ "gpu_time_pp2048": {
+  "method": "tmp/kvr/prof_pp.py: the pp2048 batch under STRIX_NODE_TIMING=1 GGML_CUDA_DISABLE_GRAPHS=1, every dispatch bracketed by events, summed by op / tensor / shape; 0.2.0 against the same build with every new switch off: STRIX_HC_INJECT_FUSE=0 STRIX_GDN_R16=0 STRIX_SKINNY_F32=0 STRIX_MMB_F32_MIN_T=512 STRIX_MMB_F32_NARROW=0 STRIX_TOP_K_ROWS=0 STRIX_QSA_PACK_FUSE=0 STRIX_CONT_SIGMOID=0 STRIX_IDX_SCORE=0 STRIX_MMB_PAD=0 STRIX_GDN_GATHER_SKIP=0 STRIX_GDN_OUT_2D=0 STRIX_PLE_UNBUFFERED=0 STRIX_PLE_CACHE_MB=0 (tmp/kvr/prof_020.out, prof_020_full64k_*.txt)",
+  "depth_0": {"0.2.0_ms": 1573.2, "switches_off_ms": 1859.6, "dispatches": [1934, 1934],
+   "largest_ms": {"hc_inject [4,T]": [4.8, 177.7], "HC down [320,T]": [54.4, 124.6], "GATED_DELTA_NET": [90.6, 111.2], "F32 [48,T] (beta, alpha)": [13.4, 35.4], "gate copy + sigmoid + multiply": [18.5, 19.1]}},
+  "depth_65536": {"0.2.0_ms": 1787.9, "switches_off_ms": 2276.4, "dispatches": [2198, 2510],
+   "largest_ms": {"hc_inject [4,T]": [5.3, 176.6], "HC down [320,T]": [57.4, 117.8], "indexer score (4 strips: product, ReLU, sum)": [29.0, 153.1], "TOP_K": [20.8, 51.0], "QSA key/value packs": ["one pass", 44.6], "GATED_DELTA_NET": [92.9, 117.8], "F32 [48,T]": [13.7, 36.6], "gate copy + sigmoid + multiply": [18.5, 20.9]},
+   "grew_ms": {"combine-norm (SCALE [4,T], now with the inject's partial sums)": [147.6, 139.9], "ffn_moe_down": [236.9, 228.6]}},
+  "note": "the attention gate's copy+sigmoid fusion displaced 0.1.17's sigmoid+multiply fusion, so it is worth ~1-2 ms; the rest are the rows above"
+ },
+ "four_conversations": {
+  "method": "tmp/kvr/bs_probe.py --streams 4 --rounds 3 --modes cpu --n 256 on parallel=4 kv=q8_0 kv_pool=350208, draft cap by slots (0 at four), ~20K tokens each (release check 10)",
+  "0.2.0_tok_s": [49.7, 49.8, 50.8],
+  "0.1.17_tok_s_release_check": 47.1
+ },
+ "accuracy": {
+  "ppl_ctx8192_8_chunks": {"method": "tmp/kvr/ppl_kb.py --ctx 8192 --ubatch 8192 --chunks 8 on tmp/realtext.txt",
+   "0.2.0_f16": 2.6811, "0.2.0_q8_0": 2.6927, "0.1.17_f16": 2.6880,
+   "0.2.0_f16_chunks": [3.7402, 3.2434, 2.7635, 2.4071, 2.2879, 2.5647, 2.5475, 2.6811]},
+  "equivalence_probe_18_6k": "tmp/fusion_equiv_probe.py, f16, MTP off: the same 48 tokens as 0.1.17; top probabilities differ from the first token (logprob -0.0777 against -0.0485). With STRIX_HC_INJECT_FUSE=0 STRIX_GDN_R16=0 STRIX_SKINNY_F32=0 STRIX_MMB_F32_MIN_T=512 every token and top-5 probability is 0.1.17's",
+  "why_not_bitwise": "the inject's four per-stream partial sums, the GDN kernel's decay-scaled state (folded back below 2^-20) and the narrow F32 kernels add in another order than 0.1.17; this model amplifies a last-bit difference (a 1-ULP change moves single-chunk KLD by 0.01-0.024), so perplexity over 8 chunks and per-kernel difference checks are the measure, not one chunk's KLD"
+ },
+ "bug_found_by_the_release_checks": "with a q8_0 cache perplexity was 9.75: the QSA pack fusion read its source (the cache dequantized to f16 in the compute buffer) after the allocator had given that memory to the fused output. graph_optimize now adds an allocation dependency (the source stays allocated until the output is computed), for the pack and the gate copy fusions, and the dispatch refuses overlapping memory. After the fix: 2.6927",
+ "release_checks": "tmp/kvr/gates_020.sh -> gates_020b.out, all pass: equivalence probe (text identical; bitwise with the four switches off); q8_0 history independence (B over A's freed cells hashes as B alone after every batch); MTP rewind at 85K, 400 tokens identical twice (prefill 1172.9 t/s); 173K + 155K conversations read back from disk equal resident; vision stress with the disk tier; 137K shared-slot conversation, no assert; allocation failure at a checkpoint recovers to the same tokens; truncation 30/30 twice, 1216 tokens; 40-turn agent workload on four slots, no warning; four streams 49.8 tok/s; PPL as above",
+ "ple_unbuffered": "a cold 2K-token gather of per-layer-embedding rows 240 -> 58 ms (16 requests in flight on each of 16 workers, FILE_FLAG_NO_BUFFERING; any buffered handle or mapping of the file drops such reads to ~8K IOPS). The RAM cache (STRIX_PLE_CACHE_MB, default 400) keeps the raw rows read"
+}

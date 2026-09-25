@@ -708,6 +708,11 @@ def runtime_environment(cfg):
     if cfg.get('mtp') and cfg.get('parallel', 1) > 1:
         dm = int(cfg['draft_max'])
         env['STRIX_SPEC_DRAFT_BY_SLOTS'] = ','.join(str(x) for x in (dm, min(dm, 2), min(dm, 2), 0))
+    # Several conversations decoding together: from seven tokens a step the routed experts take the tiled kernel,
+    # which dequantizes an expert once for all its tokens (eight conversations +6% summed). Not with one slot, where
+    # the limit stays upstream's and the results stay those of earlier versions.
+    if cfg.get('parallel', 1) > 1:
+        env['STRIX_MOE_VEC_MAX'] = '6'
     if not bundled_rocm():
         env['PATH'] = str(ROCM_BIN) + os.pathsep + os.environ.get('PATH', '')
     return env

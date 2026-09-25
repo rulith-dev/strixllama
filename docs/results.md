@@ -28,19 +28,21 @@ full prefill, **on a freshly started server** (see the image note below — that
 
 | | | |
 |---|---|---|
-| prefill, 95.6K tokens of real text | **983 t/s** | 982.1 / 979.6 / 988.7 over 3 runs, 0.1.9 |
+| prefill, 95.6K tokens of real text | **1187 t/s** | 1187.4 / 1183.7 / 1200.6 over 3 runs, 0.2.0 |
 | decode, 85K context | **28.7 ms/token** (34.9 tok/s) | 29.45 / 28.25 / 28.25, draft acceptance 68-69%, 2.99 tokens per pass |
 | decode, short context | **26.8 ms/token** (37.4 tok/s) | 27.47 / 26.37 / 26.42, acceptance 60%, 2.70 tokens per pass |
 | image input | works | Qwen3-VL projector, 904 MB |
 
 The first run of each group is a warm-up: 29.45 against 28.25 twice, 27.47 against 26.4 twice. The
-prefill figures need no such caveat — runs land within 1% of each other.
+prefill figures need no such caveat — runs land within 1-3% of each other.
 
-The prefill row is 0.1.9's, measured 2026-09-23, each run on a fresh server:
+The prefill row is 0.2.0's, measured 2026-09-25, each run on a fresh server, alternating with 0.1.17 on
+the same text:
 `tools/decode_lab.py --config dectime --words 700 --n 4 --gen 16 --gen-prefix <text> --gen-prefix-chars 340000`,
 where the text is llama.cpp's own docs, tool READMEs and `src/llama-*.cpp` concatenated (95,582
-tokens). 0.1.8 gave 888.3 / 892.9 / 889.7 on the same text, and the 2026-09-19 build 886.2 / 883.7 /
-887.6 on 85K tokens of prose.
+tokens). 0.1.17 gave 999.1 / 965.5 / 992.4 in between; 0.1.9 982.1 / 979.6 / 988.7 (2026-09-23),
+0.1.8 888.3 / 892.9 / 889.7, and the 2026-09-19 build 886.2 / 883.7 / 887.6 on 85K tokens of prose.
+The decode rows are older; 0.2.0 does not change decode (below).
 
 ### A slot that has served an image decodes ~7% slower until it is cleared
 
@@ -215,6 +217,49 @@ same prompt: 29.5 tok/s with MTP there against 37.8 in the bundle (acceptance 0.
 different text from the ninth token. Measurements made through the manager before this date ran on the
 driver's runtime; comparisons inside a round hold, absolute MTP figures are low. `bootstrap.py --build`
 now puts the SDK's copies beside the build, and the two layouts agree bitwise. See `docs/measuring.md`.
+
+**The rest of a prefill batch (0.2.0, 2026-09-25).** With the expert kernels at their limit since 0.1.9, a
+2K-token batch still spent a quarter of its GPU time on work that should have been cheap. The
+hyper-connection inject (10240 inputs, 4 outputs, F32) ran through a GEMM tile 64 rows wide. The HC down
+projection read BF16 activation rows whose 4 KB stride put all of them on the same memory channels. The
+lightning indexer scored a query strip in a matrix product, a ReLU, a sum and more small passes. Each
+layer's sparse-attention key and value packs were full copies of the cache, made twice. 0.2.0 computes the inject inside the combine-norm kernel while its
+input is in registers, pads those rows by 64 elements, scores a strip in one kernel, selects TOP_K by a
+radix select over a row held in registers (the same selected set), writes the packs from the cache in one
+pass, and runs the gated delta net's prefill with 16 state rows and four columns a lane group and the state
+scaled by its decay, so a token's two reductions run together. Narrow F32 weights get their own kernels,
+and F32 GEMMs from 9 columns go to the WMMA kernel instead of hipBLAS, which loads each of its kernels
+from disk on first use: stalls of 20-400 ms, again whenever a context length reaches a new one.
+
+GPU time summed over a pp2048 batch's dispatches (`STRIX_NODE_TIMING=1`, graphs off), against the same
+build with every new switch off: 1860 -> 1573 ms at depth 0, 2276 -> 1788 ms at depth 64K. The largest
+moves at 64K, in ms over the batch: inject 177 -> 5, HC down 118 -> 57, indexer scores 153 -> 29, TOP_K
+51 -> 21, GDN 118 -> 93, and the packs' two copies (45) become one pass. The attention gate's copy+sigmoid
+fusion is worth ~2 ms: it displaced 0.1.17's sigmoid+multiply fusion. End to end, the two releases
+alternating on one machine, each run on a fresh server:
+
+| | 0.2.0 | 0.1.17 |
+|---|---|---|
+| prefill, 95.6K tokens of real text | 1187.4 / 1183.7 / 1200.6 t/s | 999.1 / 965.5 / 992.4 |
+| prefill, 86.1K tokens of real text | 1160.6 / 1119.1 / 1143.8 | 978.8 / 963.5 / 959.5 |
+| pp2048 at depth 0 / 64K, MTP off | 1070 / 906 | 919 / 739 |
+| decode after the 86.1K tokens, 400 tokens | 29.10 / 29.67 / 29.48 ms/token, acceptance 62% | 29.85 / 30.60 / 31.47, 63% |
+| four conversations at ~20K tokens, q8_0 | 49.7 / 49.8 / 50.8 tok/s summed | 47.1 (its release check) |
+
+Decode does not move: a step is weight bandwidth, which none of this touches (at 2.3K tokens the median
+speculative pass is 66.9 against 68.0 ms). The four-conversation gain is the GDN reading its states where
+they are instead of gathering them (3 MB a sequence a layer) and its output projection as one product.
+
+0.2.0 is not bitwise 0.1.17: the inject's partial sums, the GDN's scaled state and the small F32 GEMMs add
+in another order, and this model amplifies a last-bit difference. The 18.6K-token equivalence probe gives
+the same 48 tokens, but its first token at probability 0.925 against 0.953. Perplexity at 8K context over
+8 chunks: 2.6811 against 2.6880 (f16), 2.6927 with a q8_0 cache.
+`STRIX_HC_INJECT_FUSE=0 STRIX_GDN_R16=0 STRIX_SKINNY_F32=0 STRIX_MMB_F32_MIN_T=512` gives 0.1.17's output
+bit for bit. The release checks found one real bug on the way: the two copy fusions read their source
+while they write, and with a q8_0 cache the source was the dequantized f16 copy in the compute buffer,
+whose memory the allocator had already given to the fused output (perplexity 9.75). `graph_optimize` now
+keeps the source allocated until the output is computed, and the dispatch refuses overlapping memory.
+Details: `docs/results/prefill-kernels-20260925.json`.
 
 ## Correctness
 
