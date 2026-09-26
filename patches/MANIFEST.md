@@ -496,3 +496,12 @@ to TheRock ROCm 10.2.0a20260925. Measured in `docs/results/multi-stream-20260926
 | patch | files | what |
 |---|---|---|
 | `apply_small_batch_decode` | `ggml-cuda.cu` | two products of a several-conversation verify step (5-32 tokens) on the vector kernel over chunks of the batch, not on tiles they barely fill: an F32 weight at 9-32 columns (`STRIX_F32_VEC_CHUNK_MAX`; the MoE router [2560 x 512] took MMB's 128-row tiles, four workgroups for the whole GPU, ~250 us a product), and the routed experts past the vector kernel's limit (IQ3_S 4 tokens, IQ4_NL 6) in chunks of 4 tokens up to 16 (`STRIX_MOE_VEC_CHUNK=0`: MMQ as before; `STRIX_MOE_VEC_CHUNK_MAX_T`). A nine-token verify step 120-123 -> 103-104 ms. Batches of one to four tokens, and of more than 32, are unchanged |
+
+## Addendum 2026-09-26: 0.2.4
+
+`concat.cu` joins the delta (53: 49 modified, 4 added); replay 53 / 53, 58 patches. Measured in
+`docs/results/verify-small-products-20260926.json`.
+
+| patch | files | what |
+|---|---|---|
+| `apply_verify_small_products` | `ggml-cuda.cu`, `concat.cu` | three more products of a several-conversation verify step off kernels that ran a few workgroups for the whole GPU: the GDN conv input's concat of a transposed batch of 2-31 tokens on the tiled transpose (`STRIX_CONCAT_T_MIN`, upstream 32: the non-contiguous kernel ran one 256-thread block per channel and sequence for 3 + tokens values, ~30K blocks at three conversations); at 9-32 columns a BF16 weight (`STRIX_BF16_VEC_CHUNK_MAX`; the indexer's k projection [2560 x 128] took MMB's one 128-row tile) and a quantized weight of at most 1024 output rows (`STRIX_Q_VEC_CHUNK_MAX`, `STRIX_Q_VEC_CHUNK_ROWS`; the hyper-connection down projection, the attention k and v, the shared expert took 3-5 MMQ tiles) on the vector kernel over chunks of 8 columns. A nine-token verify step 106.4 -> 103.0 ms, a twelve-token one 129.4 -> 123.5 (the server's timing, default sampling). Batches of one to eight tokens give the same output as before (the concat is a copy either way), and so do batches of more than 32 |

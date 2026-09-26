@@ -32,7 +32,7 @@ model files of [the README's list](../README.md#model-files):
 | prefill, 95.6K tokens of real text | **1183 t/s** | 1191.2 / 1167.4 / 1182.8 over 3 runs |
 | decode, 86K context | **30.7 ms/token** (32.6 tok/s) | 32.14 / 30.65 / 29.81, draft acceptance 63%, 2.84 tokens per pass |
 | decode, short context | **24.4 ms/token** (41.0 tok/s) | 25.31 / 24.38 / 24.27, acceptance 66%, 2.90 tokens per pass |
-| decode, 3 / 4 conversations at once | **55.7 / 60.4 tok/s** summed | ~4K tokens each, default sampling, six rounds each |
+| decode, 3 / 4 conversations at once | **53.6 / 61.4 tok/s** summed | 0.2.4, ~4K tokens each, default sampling with a new seed every round, nine rounds each |
 | image input | works | Qwen3-VL projector, 904 MB |
 
 The first run of each decode group is a warm-up: 32.14 against 30.2 for the other two, 25.31 against
@@ -52,9 +52,14 @@ ms/token at 62% acceptance, so 0.2.3 is ~2-3% slower a step at depth (the trunca
 84.0 ms a pass against 0.2.2's 82.4); not yet traced. Until 2026-09-26 the decode rows were the
 2026-09-19 build's on Chinese prose, where drafts are accepted more often: 28.7 ms/token (34.9 tok/s)
 at 85K with 68-69% acceptance, and 26.8 ms/token (37.4 tok/s) at short context on the lab's random-word
-probe at 60%. The row of several conversations is from the 0.2.2 / 0.2.3 A/B (below), with the
-server's default sampling and the prompts cached; one conversation gets ~38 tok/s there, so three give
-1.47× and four 1.59×. Details: `docs/results/headline-20260926.json`.
+probe at 60%. The row of several conversations is 0.2.4's side of the 0.2.3 / 0.2.4 A/B (below), with
+the server's default sampling, a new seed every round and the prompts cached; one conversation gets 35.8
+tok/s the same way, so three give 1.50× and four 1.71×. One conversation drafts three tokens and has 60%
+of them accepted, three or four draft two and have 65-69% accepted, and a single round moves by ±10%
+with the acceptance of the text it samples. Until 0.2.4 the row read 55.7 / 60.4 (1.47× / 1.59×), from
+0.2.3's A/B with a fixed seed per conversation, which flattered 0.2.3 (below). Details:
+`docs/results/headline-20260926.json`, and for the row of several conversations
+`docs/results/verify-small-products-20260926.json`.
 
 ### A slot that has served an image decodes ~7% slower until it is cleared
 
@@ -325,6 +330,58 @@ acceptance at three and four moves between ~65% and ~72% from round to round (0.
 time, and a step still adds ~8 ms for every further token it verifies, ~5 of it expert weights read
 near the memory's bandwidth; `--backend-sampling` measured nothing. Details:
 `docs/results/multi-stream-20260926.json`.
+
+**Several conversations at once, three more small products (0.2.4, 2026-09-26).** After 0.2.3 a
+nine-token verify step took ~105 ms against a floor of ~51 ms for the weights it reads, and three of its
+products still ran a few workgroups for the whole GPU. The GDN conv input concatenates each sequence's
+conv state with its transposed tokens; below 32 tokens that took `concat_non_cont`, one 256-thread block
+per channel and sequence for 3 + tokens values, ~30K blocks at three conversations. The indexer's BF16 k
+projection [2560 × 128] took MMB's one 128-row tile at 9-32 columns. Quantized weights of at most 1024
+output rows - the hyper-connection down projection [10240 → 320] 96 times a step, the attention k and v,
+the shared expert's gate and up - took 3-5 MMQ tiles, and MMQ has no stream-k on RDNA.
+`apply_verify_small_products` sends the concat to the tiled transpose from 2 tokens and runs both kinds
+of weight on the vector kernel over chunks of 8 columns; the [6144 → 2560] projections stay on MMQ, where
+reading the weight a second time cost more than the idle tiles. Development A/B, greedy, the verify
+step's median per run: nine tokens 103.7-106.7 → 99.0-101.5 ms, twelve 122.5-124.9 → 118.9-121.5, one
+conversation 54.8 / 55.0 → 54.2 / 54.7.
+
+Release A/B, 0.2.3 against 0.2.4, alternating, three passes of three rounds, ~4K tokens each, 512
+tokens a stream, the server's default sampling with a new seed every round (the same seeds for both
+builds). The server's own timing over ~1,900 nine-token and ~1,800 twelve-token steps a build: verify
+106.4 → 103.0 ms and 129.4 → 123.5, the whole step 124.1 → 120.7 and 151.5 → 144.5. A round's tok/s
+follows the acceptance of the text it samples (54-86% over these rounds, ~0.4-0.5 tok/s a point), and the
+builds drew different acceptance by chance, in both directions (three conversations 71.3% against 64.7%,
+four 65.4% against 68.6%), so the tok/s are read at the same acceptance, from a least-squares line per
+build with a pooled slope: three conversations 53.8 → 55.0 tok/s summed (+2.2%), four 58.1 → 60.7
+(+4.5%); the plain means were 55.2 → 53.6 and 57.3 → 61.4. One conversation's steps carry at most four
+tokens and are unchanged: 56.3 ms a verify step on both, 37.5 / 37.6 tok/s in the first A/B (below).
+
+The first release A/B fixed each conversation's seed, as 0.2.3's had, and read 0.2.4 as no faster (three
+conversations 55.9 → 54.5 tok/s) at a lower acceptance (71.5% → 66.7%). It was measuring the sampled
+text. A server that computes a step the same way every time samples the same text in every round with a
+fixed seed, and the acceptance is that text's: 0.2.4 did at three conversations (the same three texts in
+four rounds out of four, 67% in nine rounds out of ten), 0.2.3 did not (three different outcomes in four
+rounds, 65-79% over ten). The 0.2.4 build with 0.2.3's routing through the switches samples 0.2.3's
+texts at 0.2.3's acceptance, so the text, not the build, set it. The rounds differ where the
+conversations do not join the same steps: up to 0.2.3 these products changed kernel at 9 tokens, so a
+token's result could depend on the size of the step it landed in; four conversations still vary. The
+same fixed seed flattered 0.2.3 against 0.2.2 (above): 0.2.2 sampled nearly the same text every round at
+three conversations (66-67%), 0.2.3 several (65-72%), and at the same acceptance its gain was +12.8%, not
++17% (four conversations, which 0.2.2 did not draft for: +8%, not +9%). Perplexity
+with 16-token batches, where every batch takes the new paths, is 4.0732 against 4.0870 with 0.2.3's
+routing (ctx 4096, 2 chunks); at 8K with 8192-token batches 2.6814 on both.
+
+What did not pay, parked behind switches in the development tree: a MoE kernel that reads each distinct
+expert once for all its tokens (nine tokens of three conversations route 90 expert-token pairs to 54
+distinct experts, but the 32 MB MALL already serves the repeats: neutral once the grouping was one extra
+kernel, -30% before); a one-pass Q8_0 kernel for 9-16 columns (1.5-3× MMQ in the op bench, where one
+weight stays in the MALL; equal to the chunks in the model); strided copies with rows under 1 KB on the
+copy kernel instead of `hipMemcpy2DAsync` (neutral). Where the rest of a nine-token step goes: the
+routed experts run at ~85% of the DRAM peak for the distinct experts read; the GDN kernel writes one full
+recurrent state per verified token for rollback, 3 MB a sequence a layer, ~1 GB a step at three
+conversations; the host leaves the GPU ~3 ms before each verify step. Three measuring traps of this
+round - per-dispatch times from graph event nodes, op benches whose weight stays in the MALL, and leaving
+ops out, which changed the MoE routing - are in `docs/results/verify-small-products-20260926.json`.
 
 ## Correctness
 

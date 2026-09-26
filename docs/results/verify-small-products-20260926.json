@@ -1,0 +1,611 @@
+{
+ "date": "2026-09-26",
+ "what": "0.2.4: three products of a several-conversation verify step off few-workgroup kernels (apply_verify_small_products); and what did not pay: an expert-grouped MoE kernel, a one-pass 9-16 column Q8_0 kernel, the short-row copy path",
+ "setup": "Qwen3.8-Flash-Next UD-IQ4_XS, the manager's profile with parallel=4, ctx 262144, f16 K/V, MTP with draft_max 3 and the cap 3,2,2,2,0. tmp/kvr/bs_probe.py / bs_sweep.py on a server started as production (tmp/kvr/with_server.py): N conversations of distinct real text (~4K tokens each) pinned to slots and cached first. Development A/Bs: greedy, 256 tokens a stream, the verify step's median time per pass from STRIX_SPEC_TIMING=1 (the 'decode' column of tmp/kvr/st_summary.py), each configuration on a fresh server, alternating in the same run.",
+ "changes": {
+  "concat": "the GDN conv input ggml_concat(state, transpose(x), 0) of 2-31 tokens per sequence took concat_non_cont: one 256-thread block per channel and sequence for 3 + tokens values, ~30K blocks at three conversations; now the tiled transpose from 2 tokens (STRIX_CONCAT_T_MIN, was 32). A copy either way, so a single conversation's output is bit for bit 0.2.3's",
+  "bf16_chunks": "the indexer's BF16 k projection [2560 x 128] at 9-32 columns took MMB's one 128-row tile (one workgroup); BF16 weights now take the vector kernel over column chunks there (STRIX_BF16_VEC_CHUNK_MAX, 32)",
+  "q_chunks": "quantized weights of at most 1024 output rows at 9-32 columns (hyper-connection down [10240 -> 320] x96 a step, attention k / v, shared expert gate / up) took 3-5 MMQ tiles, no stream-k on RDNA; now the vector kernel over 8-column chunks (STRIX_Q_VEC_CHUNK_MAX 32, STRIX_Q_VEC_CHUNK_ROWS 1024). With 2560 rows ([6144 -> 2560]) the chunks were slower than MMQ, so they stay"
+ },
+ "dev_ab_verify_ms": {
+  "3 streams": {
+   "0.2.3": [
+    105.6,
+    103.7,
+    106.65,
+    104.2
+   ],
+   "0.2.4": [
+    99.1,
+    99.0,
+    101.5,
+    99.7
+   ]
+  },
+  "4 streams": {
+   "0.2.3": [
+    122.5,
+    123.3,
+    124.85,
+    124.2
+   ],
+   "0.2.4": [
+    119.0,
+    118.9,
+    121.5
+   ],
+   "note": "one 0.2.4 run at 130.1 had every host column raised too (process, sample, other) and is left out"
+  },
+  "1 stream": {
+   "0.2.3": [
+    54.8,
+    55.0
+   ],
+   "0.2.4": [
+    54.2,
+    54.7
+   ],
+   "note": "the cleanest pair (tmp/kvr/dev_iso.sh); other pairs spread +/-2 ms both ways"
+  }
+ },
+ "release_ab": {
+  "tok_s": {
+   "0.2.3": {
+    "3": [
+     57.0,
+     54.0,
+     49.0,
+     55.1,
+     54.0,
+     53.8,
+     54.1,
+     62.1,
+     58.0
+    ],
+    "4": [
+     48.0,
+     59.3,
+     59.8,
+     56.5,
+     60.9,
+     57.6,
+     56.2,
+     59.7
+    ]
+   },
+   "0.2.4": {
+    "3": [
+     53.1,
+     54.9,
+     50.2,
+     55.3,
+     57.3,
+     55.4,
+     54.0,
+     50.0,
+     52.0
+    ],
+    "4": [
+     63.8,
+     60.7,
+     56.9,
+     62.3,
+     60.7,
+     56.9,
+     67.3,
+     62.4,
+     61.5
+    ]
+   }
+  },
+  "acceptance_pct": {
+   "0.2.3": {
+    "3": [
+     79,
+     68,
+     61,
+     71,
+     67,
+     69,
+     66,
+     86,
+     75
+    ],
+    "4": [
+     54,
+     75,
+     67,
+     63,
+     71,
+     62,
+     65,
+     66
+    ]
+   },
+   "0.2.4": {
+    "3": [
+     71,
+     68,
+     62,
+     66,
+     69,
+     68,
+     64,
+     55,
+     59
+    ],
+    "4": [
+     75,
+     67,
+     60,
+     73,
+     65,
+     64,
+     82,
+     67,
+     64
+    ]
+   }
+  },
+  "mean_tok_s": {
+   "0.2.3": {
+    "3": 55.23,
+    "4": 57.25
+   },
+   "0.2.4": {
+    "3": 53.58,
+    "4": 61.39
+   }
+  },
+  "mean_acceptance_pct": {
+   "0.2.3": {
+    "3": 71.3,
+    "4": 65.4
+   },
+   "0.2.4": {
+    "3": 64.7,
+    "4": 68.6
+   }
+  },
+  "at_equal_acceptance": {
+   "3": {
+    "acceptance_pct": 68,
+    "slope_tok_s_per_point": 0.424,
+    "tok_s": {
+     "0.2.3": 53.82,
+     "0.2.4": 54.99
+    },
+    "gain_pct": 2.2
+   },
+   "4": {
+    "acceptance_pct": 67.1,
+    "slope_tok_s_per_point": 0.481,
+    "tok_s": {
+     "0.2.3": 58.06,
+     "0.2.4": 60.67
+    },
+    "gain_pct": 4.5
+   }
+  },
+  "reading": "a round's tok/s follows the acceptance of the text it sampled (54-86% here, ~0.4-0.5 tok/s a point); the builds' mean acceptance differs by chance in both directions (three: 71.3 against 64.7, four: 65.4 against 68.6), so they are compared at the same acceptance. Every completed round is kept (0.2.3's at 54% too); one round failed, 0.2.3's first at four streams (HTTP 500: ignore_eos ran a text past its end into template tags, which the server's output parser rejects; a probe artifact, chats stop at the end)",
+  "method": "0.2.3 against 0.2.4, alternating, three passes of three rounds, 3 / 4 streams, 512 tokens a stream, ~4K tokens each, default sampling with a new seed every round and pass (the same seeds for both builds; tmp/kvr/rel024_ab2.sh)",
+  "step_medians": {
+   "0.2.3": {
+    "n=9": {
+     "passes": 1943,
+     "verify_ms": 106.4,
+     "step_ms": 124.1
+    },
+    "n=12": {
+     "passes": 1772,
+     "verify_ms": 129.4,
+     "step_ms": 151.5
+    }
+   },
+   "0.2.4": {
+    "n=9": {
+     "passes": 1948,
+     "verify_ms": 103.0,
+     "step_ms": 120.7
+    },
+    "n=12": {
+     "passes": 1808,
+     "verify_ms": 123.5,
+     "step_ms": 144.5
+    }
+   }
+  }
+ },
+ "release_ab_fixed_seeds": {
+  "tok_s": {
+   "0.2.3": {
+    "1": [
+     36.6,
+     37.0,
+     37.7,
+     38.2,
+     37.4,
+     38.3
+    ],
+    "3": [
+     57.1,
+     52.4,
+     54.2,
+     57.5,
+     57.7,
+     56.7
+    ],
+    "4": [
+     60.9,
+     60.7,
+     58.7,
+     62.0,
+     59.4,
+     57.9
+    ]
+   },
+   "0.2.4": {
+    "1": [
+     37.0,
+     38.6,
+     37.2,
+     37.8,
+     37.1,
+     38.1
+    ],
+    "3": [
+     55.3,
+     53.7,
+     54.7,
+     55.5,
+     54.6,
+     53.3
+    ],
+    "4": [
+     63.2,
+     58.5,
+     59.4,
+     60.3,
+     57.6,
+     57.3
+    ]
+   }
+  },
+  "acceptance_pct": {
+   "0.2.3": {
+    "1": [
+     63,
+     63,
+     63,
+     63,
+     63,
+     63
+    ],
+    "3": [
+     72,
+     65,
+     69,
+     72,
+     79,
+     72
+    ],
+    "4": [
+     73,
+     70,
+     64,
+     73,
+     64,
+     66
+    ]
+   },
+   "0.2.4": {
+    "1": [
+     63,
+     63,
+     63,
+     63,
+     63,
+     63
+    ],
+    "3": [
+     67,
+     65,
+     67,
+     67,
+     67,
+     67
+    ],
+    "4": [
+     72,
+     61,
+     61,
+     63,
+     61,
+     63
+    ]
+   }
+  },
+  "mean_tok_s": {
+   "0.2.3": {
+    "1": 37.53,
+    "3": 55.93,
+    "4": 59.93
+   },
+   "0.2.4": {
+    "1": 37.63,
+    "3": 54.52,
+    "4": 59.38
+   }
+  },
+  "mean_acceptance_pct": {
+   "0.2.3": {
+    "1": 63,
+    "3": 71.5,
+    "4": 68.3
+   },
+   "0.2.4": {
+    "1": 63,
+    "3": 66.7,
+    "4": 63.5
+   }
+  },
+  "at_equal_acceptance": {
+   "1": {
+    "acceptance_pct": 63,
+    "slope_tok_s_per_point": 0.0,
+    "tok_s": {
+     "0.2.3": 37.53,
+     "0.2.4": 37.63
+    },
+    "gain_pct": 0.3
+   },
+   "3": {
+    "acceptance_pct": 69.1,
+    "slope_tok_s_per_point": 0.404,
+    "tok_s": {
+     "0.2.3": 54.96,
+     "0.2.4": 55.49
+    },
+    "gain_pct": 1.0
+   },
+   "4": {
+    "acceptance_pct": 65.9,
+    "slope_tok_s_per_point": 0.373,
+    "tok_s": {
+     "0.2.3": 59.03,
+     "0.2.4": 60.29
+    },
+    "gain_pct": 2.1
+   }
+  },
+  "method": "0.2.3 as released (tmp/rt023) against the 0.2.4 build, alternating, three passes of two rounds, 1 / 3 / 4 streams, 512 tokens a stream, ~4K tokens each, the server's default sampling with the seed fixed per stream (tmp/kvr/rel024_ab.sh)",
+  "step_medians": {
+   "0.2.3": {
+    "n=4": {
+     "passes": 692,
+     "verify_ms": 56.3,
+     "step_ms": 69.5
+    },
+    "n=9": {
+     "passes": 832,
+     "verify_ms": 106.6,
+     "step_ms": 124.1
+    },
+    "n=12": {
+     "passes": 817,
+     "verify_ms": 128.3,
+     "step_ms": 149.4
+    }
+   },
+   "0.2.4": {
+    "n=4": {
+     "passes": 768,
+     "verify_ms": 56.3,
+     "step_ms": 70.1
+    },
+    "n=9": {
+     "passes": 846,
+     "verify_ms": 101.8,
+     "step_ms": 119.5
+    },
+    "n=12": {
+     "passes": 866,
+     "verify_ms": 123.1,
+     "step_ms": 143.9
+    }
+   },
+   "note": "passes 2 and 3 (the logs of pass 1 were overwritten before they were kept); n=4 here is mostly one conversation (1 x 4 tokens), as four conversations drafted most steps"
+  },
+  "reading": "misleading: with a fixed seed a server that computes every step the same way samples the same text every round, and the acceptance is that text's. 0.2.4 did (67% in 5 of 6 rounds at three), 0.2.3 did not (65-79%), so this compared about one text of 0.2.4 with three of 0.2.3; see determinism"
+ },
+ "one_conversation_varied_seeds": {
+  "method": "0.2.4, one stream, the A/B's seeds (three seed bases of three rounds, tmp/kvr/one_024.sh), 512 tokens, ~4K tokens",
+  "tok_s": [
+   37.2,
+   39.7,
+   33.5,
+   35.8,
+   37.8,
+   32.9,
+   34.6,
+   32.9,
+   38.0
+  ],
+  "acceptance_pct": [
+   60,
+   66,
+   58,
+   58,
+   62,
+   54,
+   59,
+   56,
+   66
+  ],
+  "mean_tok_s": 35.82,
+  "mean_acceptance_pct": 59.9,
+  "reading": "for the README's 'x one conversation': 3 streams 53.6 / 35.8 = 1.50x, 4 streams 61.4 / 35.8 = 1.71x (0.2.4's plain means). One conversation drafts 3 tokens (lower acceptance per token than the 2 of several)"
+ },
+ "determinism": {
+  "method": "three streams, four rounds, the seed fixed per stream, a sha1 prefix of each stream's text per round (tmp/kvr/acc_ab.sh): 0.2.4, the 0.2.4 build with STRIX_BF16_VEC_CHUNK_MAX=0 STRIX_Q_VEC_CHUNK_MAX=0 STRIX_CONCAT_T_MIN=32 (0.2.3's routing), 0.2.3",
+  "rounds": {
+   "new": [
+    {
+     "acceptance_pct": 67,
+     "texts": [
+      "06465f",
+      "597c2e",
+      "2a9887"
+     ]
+    },
+    {
+     "acceptance_pct": 67,
+     "texts": [
+      "06465f",
+      "597c2e",
+      "2a9887"
+     ]
+    },
+    {
+     "acceptance_pct": 67,
+     "texts": [
+      "06465f",
+      "597c2e",
+      "2a9887"
+     ]
+    },
+    {
+     "acceptance_pct": 67,
+     "texts": [
+      "06465f",
+      "597c2e",
+      "2a9887"
+     ]
+    }
+   ],
+   "old-env": [
+    {
+     "acceptance_pct": 72,
+     "texts": [
+      "3761d9",
+      "d57253",
+      "4a2d75"
+     ]
+    },
+    {
+     "acceptance_pct": 65,
+     "texts": [
+      "f3dd0c",
+      "0e8a1b",
+      "f83a3d"
+     ]
+    },
+    {
+     "acceptance_pct": 72,
+     "texts": [
+      "3761d9",
+      "d57253",
+      "4a2d75"
+     ]
+    },
+    {
+     "acceptance_pct": 72,
+     "texts": [
+      "3761d9",
+      "d57253",
+      "4a2d75"
+     ]
+    }
+   ],
+   "rel023": [
+    {
+     "acceptance_pct": 69,
+     "texts": [
+      "b40a56",
+      "142b74",
+      "f0c2ff"
+     ]
+    },
+    {
+     "acceptance_pct": 72,
+     "texts": [
+      "3761d9",
+      "d57253",
+      "4a2d75"
+     ]
+    },
+    {
+     "acceptance_pct": 77,
+     "texts": [
+      "1591fe",
+      "7d5cdb",
+      "2f904b"
+     ]
+    },
+    {
+     "acceptance_pct": 72,
+     "texts": [
+      "3761d9",
+      "d57253",
+      "4a2d75"
+     ]
+    }
+   ]
+  },
+  "step_medians": {
+   "new": {
+    "n=9": {
+     "passes": 822,
+     "verify_ms": 100.7,
+     "step_ms": 117.2
+    }
+   },
+   "old-env": {
+    "n=9": {
+     "passes": 811,
+     "verify_ms": 105.3,
+     "step_ms": 121.6
+    }
+   },
+   "rel023": {
+    "n=9": {
+     "passes": 784,
+     "verify_ms": 105.3,
+     "step_ms": 122.3
+    }
+   }
+  },
+  "reading": "0.2.4 sampled the same three texts in all four rounds; with 0.2.3's routing the build gave 0.2.3's texts (3761d9 d57253 4a2d75, 72%) in three rounds and another in the fourth; 0.2.3 gave three different outcomes in four rounds. Which text is sampled decides the acceptance. The run-to-run differences come from steps that carry a different number of tokens (the conversations do not always join the same step): up to 0.2.3 these products took the vector kernel at 1-8 tokens and MMQ / MMB from 9, so a token's result could depend on the step it landed in; 0.2.4 keeps them on the vector kernel up to 32 tokens. Four conversations still vary (the taller weights still change kernel at 9)"
+ },
+ "ppl_ubatch16": {
+  "method": "tmp/kvr/ppl_kb.py, ctx 4096, 2 chunks, ubatch 16 (every batch takes the new paths), f16 K/V, the 0.2.4 build",
+  "0.2.4": {
+   "ppl": 4.0732,
+   "chunks": [
+    3.5972,
+    4.0732
+   ]
+  },
+  "0.2.3 routing (env)": {
+   "ppl": 4.087,
+   "chunks": [
+    3.5985,
+    4.087
+   ]
+  },
+  "reading": "no accuracy lost on the new paths (the 8K / 8-chunk gate is 2.6814 on both, its batches are 8192 tokens)"
+ },
+ "not_kept": {
+  "expert_grouped_kernel": "a MoE vector kernel reading each distinct expert once for all its tokens: real verify steps share experts a lot (9 tokens of three conversations: 90 expert-token pairs, 54 distinct experts; 12 tokens: 120, 67; the three tokens of one conversation 28% of their pairs), but the 32 MB MALL already serves the repeats. v1 (a serial scan of the ids in every block) -30%; v2 (a one-block grouping kernel, blocks look it up) neutral (3 streams 98.5 / 98.0 against 99.1 / 99.0 ms). Op tests passed and a single conversation was bit for bit, so it is only parked",
+  "wide_q8_0_kernel": "a one-pass Q8_0 kernel for 9-16 columns (weights read once, the quants loaded once per block for every column): 1.5-3x faster than MMQ in the op bench, where a single weight stays in the MALL, but in the model equal to the chunks above (3 streams 99.2 / 99.9 ms, 4 streams 122.3 / 123.3)",
+  "short_row_copies": "strided copies with rows under 1 KB on the copy kernel instead of hipMemcpy2DAsync (the conv state's rollback-slot copies are 12-byte rows): neutral (3 streams 101.5 / 99.95 against 101.5 / 99.7)"
+ },
+ "measurement_notes": {
+  "fixed_seeds": "a fixed seed per stream makes every round of a deterministic server one and the same sample: compare builds with a new seed every round (bs_probe.py --vary-seeds) or by the verify step's time",
+  "graph_events": "STRIX_GRAPH_EVENTS (an event node before every dispatch of a captured HIP graph): the totals hold after removing ~13.4 us a node, but single dispatches get zero, negative or their neighbour's time, so per-op readings from it misled (a 'dense Q8_0 at 2.5-3x its bandwidth time' that the model did not show)",
+  "op_benches": "test-backend-ops with 8 weights a case (bs=8) supplies the parallelism a single weight lacks, and with one weight the MALL holds it: neither shows a single decode-sized product's DRAM behaviour",
+  "leaving_ops_out": "dropping a node class (output garbage) collapsed the MoE routing onto a few experts, so the step got faster for the wrong reason (-9 ms for 144 copies that cost ~0 when kept)",
+  "running_ops_twice": "running a class twice (same output) gives its cost when the op is idempotent: norms ~0, copies / gathers ~1 ms, flash attention ~1-2 ms of a 100 ms nine-token step; elementwise ops are not (the allocator reuses their inputs in place)",
+  "where_the_step_goes": "at nine tokens ~100 ms against a floor of ~51 ms (dense weights 4.6 GB, distinct experts 6 GB): the routed experts run at ~85% of DRAM peak for the distinct experts; the GDN kernel writes one full recurrent state per token for rollback (3 MB a sequence a layer, ~1 GB a step at three conversations); the host leaves the GPU ~3 ms before each verify step (GPU busy ~89%)"
+ }
+}

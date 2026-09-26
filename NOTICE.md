@@ -24,8 +24,8 @@ Upstream: [`pwilkin/llama.cpp`](https://github.com/pwilkin/llama.cpp) at
 `patches/` applies to that revision, and `tools/replay_bootstrap.py` proves the set reproduces
 the build exactly.
 
-`bootstrap/UPSTREAM.json` records the provenance of the 24 files this project changes: for each of
-the 20 it modifies, the Git blob SHA-1 and SHA-256 the file has *upstream*, and for all 24 the
+`bootstrap/UPSTREAM.json` records the provenance of the 53 files this project changes: for each of
+the 49 it modifies, the Git blob SHA-1 and SHA-256 the file has *upstream*, and for all 53 the
 SHA-256 the patch set produces. The replay restores the upstream side by blob hash, so what it
 rebuilds from is upstream's content by construction rather than by assertion.
 
@@ -48,8 +48,8 @@ silent; comment out `converge_settings()` to keep them.
 ### ROCm SDK
 
 `toolchain/` is assembled locally from the ROCm SDK wheels (TheRock) plus `ninja` and `aria2`, and
-is not redistributed here. Each component keeps its own license; the wheels used were
-`rocm 10.1.0a20260910` and its `rocm_sdk_*` companions.
+is not redistributed here. Each component keeps its own license; the wheels used are
+`rocm 10.2.0a20260925` and its `rocm_sdk_*` companions (`rocm 10.1.0a20260910` up to 0.2.2).
 
 ### Model weights — not in this repository
 
@@ -80,8 +80,8 @@ projector. Obtain them from their official channels and observe their own licens
 `f5daaa3cfa6358e5dd398911ec741813745a5440`，固定在 `bootstrap/bootstrap.py` 里。`patches/` 下的
 每个脚本都针对该版本；`tools/replay_bootstrap.py` 可证明整套补丁精确重建该构建。
 
-`bootstrap/UPSTREAM.json` 记录本项目改动的那 24 个文件的来源：被修改的 20 个各记其**上游**版本的
-Git blob SHA-1 与 SHA-256，24 个全部记补丁集产出的 SHA-256。重放时按 blob 哈希取回上游那一侧，
+`bootstrap/UPSTREAM.json` 记录本项目改动的那 53 个文件的来源：被修改的 49 个各记其**上游**版本的
+Git blob SHA-1 与 SHA-256，53 个全部记补丁集产出的 SHA-256。重放时按 blob 哈希取回上游那一侧，
 所以它据以重建的内容是上游的——这是构造保证，不是声明。
 
 ### Jan —— Apache License 2.0，Copyright 2025 Menlo Research（https://menlo.ai）
@@ -101,7 +101,7 @@ Jan，受 Jan 的 Apache-2.0 许可约束。
 ### ROCm SDK
 
 `toolchain/` 由 ROCm SDK 的 wheel 包（TheRock）加 `ninja`、`aria2` 在本地拼成，本仓库不再分发。
-各组件保留各自的许可；实际使用的是 `rocm 10.1.0a20260910` 及其 `rocm_sdk_*` 配套包。
+各组件保留各自的许可；实际使用的是 `rocm 10.2.0a20260925` 及其 `rocm_sdk_*` 配套包（0.2.2 及以前为 `rocm 10.1.0a20260910`）。
 
 ### 模型权重 —— 不在本仓库内
 

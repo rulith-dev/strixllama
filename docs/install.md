@@ -280,6 +280,19 @@ tokens each 56.1 against 49.8-51.4), while six and eight still lose with drafts 
 against 70.7). Against 0.2.2, with the server's default sampling: three conversations 47.7 → 55.7 tok/s,
 four 55.4 → 60.4, one unchanged at ~38. Measured in `docs/results/multi-stream-20260926.json`.
 
+Since 0.2.4 three more of the step's products leave kernels that ran a few workgroups for the whole GPU.
+The GDN conv input's concat of 2-31 transposed tokens takes the tiled transpose (`STRIX_CONCAT_T_MIN`;
+from 32 before), and at 9-32 columns BF16 weights (the indexer's k projection) and quantized weights of
+at most 1024 output rows (the hyper-connection down projection, the attention k and v, the shared
+expert) run the vector kernel over chunks of 8 columns (`STRIX_BF16_VEC_CHUNK_MAX`,
+`STRIX_Q_VEC_CHUNK_MAX`, `STRIX_Q_VEC_CHUNK_ROWS`). The server's own timing of a nine-token verify step
+went from 106.4 to 103.0 ms, a twelve-token one from 129.4 to 123.5. With the server's default sampling
+a round's tok/s follows the draft acceptance of the text it happens to sample (54-86% over these rounds),
+so the builds are compared at the same acceptance: three conversations 53.8 → 55.0 tok/s summed (+2%),
+four 58.1 → 60.7 (+4.5%). The same fixed seed per conversation made 0.2.3's gain over 0.2.2 read +17%
+at three conversations; at the same acceptance it was +13%. Measured in
+`docs/results/verify-small-products-20260926.json`.
+
 Since 0.2.1 the drafts of one step are also the same length for every conversation
 (`STRIX_SPEC_EVEN_DRAFTS`; `=0` drafts as before). The drafter stops a conversation's draft at its first
 unconfident token, so two conversations could draft 2 and 1 tokens, and the model's hybrid memory runs a
@@ -347,6 +360,17 @@ tokens were nearly tied. One conversation's decode (at most four tokens a step) 
 32 tokens are unchanged: an 18.6K-token prompt gives 0.2.2's output bit for bit, and perplexity at 8K
 context is 2.6814 on both. `STRIX_F32_VEC_CHUNK_MAX=0 STRIX_MOE_VEC_CHUNK=0` in the server's
 environment gives 0.2.2's routing back.
+
+### Output against 0.2.3
+
+0.2.4 runs BF16 weights, and quantized weights of at most 1024 output rows, on the vector kernel in
+batches of 9-32 tokens. Such a batch - the verify step of three or four conversations, a short chat
+turn, the last few tokens of a prompt - is summed in another order, so an answer can part from 0.2.3's
+where two tokens were nearly tied. The decode of one or two conversations (at most eight tokens a step)
+and batches of more than 32 tokens are unchanged, the new concat path being a copy either way: an
+18.6K-token prompt gives 0.2.3's output bit for bit, and perplexity at 8K context is 2.6814 on both.
+`STRIX_BF16_VEC_CHUNK_MAX=0 STRIX_Q_VEC_CHUNK_MAX=0` in the server's environment gives 0.2.3's
+routing back, and `STRIX_CONCAT_T_MIN=32` its concat kernel.
 
 ### Shared GPU memory is the display driver's decision
 
