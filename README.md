@@ -9,16 +9,17 @@ Target: **Ryzen AI Max+ 395** (Radeon 8060S, gfx1151, 128 GB unified memory) run
 
 ## Where it stands
 
-Measured on the target machine with 0.2.3 (2026-09-26), speculative decoding on: prefill over 95.6K
-tokens of real text; 400 tokens decoded after 86K tokens of that text, and after a one-line question;
-several conversations of ~4K tokens each decoding together:
+Measured on the target machine with 0.2.3 (2026-09-26; several conversations with 0.2.4), speculative
+decoding on: prefill over 95.6K tokens of real text; 400 tokens decoded after 86K tokens of that text,
+and after a one-line question; several conversations of ~4K tokens each decoding together, with a new
+sampling seed every round:
 
 | | |
 | --- | --- |
 | prefill | **1183 t/s** |
 | decode, 86K context | **30.7 ms/token** (32.6 tok/s at 63% draft acceptance) |
 | decode, short context | **24.4 ms/token** (41.0 tok/s at 66% acceptance) |
-| decode, 3 / 4 conversations at once | **55.7 / 60.4 tok/s** summed (1.47× / 1.59× one conversation in the same run) |
+| decode, 3 / 4 conversations at once | **53.6 / 61.4 tok/s** summed (1.50× / 1.71× one conversation measured the same way) |
 | image input | supported (Qwen3-VL projector) |
 
 Every number in this repository comes with the command that produced it, in
@@ -57,7 +58,7 @@ python tools/manager.py <<< '{"op":"start","data":{"id":"<model-id>"}}'
 ```
 
 `bootstrap.py` clones `pwilkin/llama.cpp` at a pinned revision, applies the patch set, and builds
-against the ROCm SDK. The same 52-file delta is also published as one commit on a fork, so it can be
+against the ROCm SDK. The same 53-file delta is also published as one commit on a fork, so it can be
 read as a plain diff: [rulith-dev/llama.cpp, branch `strixllama`](https://github.com/rulith-dev/llama.cpp/tree/strixllama). `tools/manager.py` is a JSON-on-stdin process manager: it owns the launch
 flags, the environment gates and the runtime, so a configuration is reproducible rather than
 remembered.
@@ -74,7 +75,7 @@ Optional: `integrations/jan/apply.py` overlays three management pages into a
 
 ## What is actually in here
 
-The whole delta against upstream llama.cpp is **52 files** — 48 modified, 4 added, out of 3610. The
+The whole delta against upstream llama.cpp is **53 files** — 49 modified, 4 added, out of 3610. The
 substantial pieces:
 
 | | |
@@ -85,7 +86,7 @@ substantial pieces:
 | **Sparse attention at decode** | The sparse kernel needs a packed layout only prefill builds, so a decoded token attended densely over the whole cache. Gathering the selected cells instead: 97K decode 59.0 → 49.3 ms/token, and the context slope drops from 0.188 to 0.067 ms per 1000 tokens. |
 | **A Q8_0 K/V cache, optional** | The sparse-attention kernels read f16 only, so a Q8_0 cache is dequantized into their layout each batch: at 262144 tokens the K/V cache takes 3.2 GB instead of 6, decode is unchanged and prefill 1-2% slower. f16 stays the default. |
 | **MTP speculation, tuned** | Draft head with its own IQ4_XS output projection, three draft tokens, n-gram drafting off. 85K decode 21.5 → 34.9 tok/s. |
-| **Drafts sized by concurrency** | In this mixture of experts every verified draft token reads the weights of ~10 more experts, which conversations decoding together cannot share. The draft shrinks as more conversations generate (3, then 2 up to four conversations, none from five on). The drafts of one step are the same length: the hybrid memory ran a verify of uneven drafts as several passes of the whole model, so three conversations at 4K tokens got 34 tok/s with drafting and 46 without; now 46 with it. And a verify step of several conversations (5-16 tokens) runs the MoE router and the routed experts on the vector kernel, not on tiles it barely filled: three conversations 47.7 → 55.7 tok/s summed, four 55.4 → 60.4. |
+| **Drafts sized by concurrency** | In this mixture of experts every verified draft token reads the weights of ~10 more experts, which conversations decoding together cannot share. The draft shrinks as more conversations generate (3, then 2 up to four conversations, none from five on). The drafts of one step are the same length: the hybrid memory ran a verify of uneven drafts as several passes of the whole model, so three conversations at 4K tokens got 34 tok/s with drafting and 46 without; now 46 with it. And a verify step of several conversations (5-16 tokens) runs its small products on the vector kernel, not on tiles they barely filled: since 0.2.3 the MoE router and the routed experts (a nine-token step 120-123 → 103-104 ms; three conversations +13% at the same draft acceptance, four, which now draft, +8%), since 0.2.4 three more (106 → 103 ms; +2% and +4.5%). |
 | **Output that does not depend on what ran before** | Freed KV cells are zeroed: the sparse attention's matrix-core sums moved in the last bit with what an earlier conversation or a rejected draft had left in them. The MTP drafter's carried state follows a conversation through rewinds and the prompt cache: the same prompt sent twice drafts, and answers, the same. |
 | **Two correctness fixes** | Speculative verification batches ran dense attention with no causal mask, so long answers drifted and stopped early. Image input aborted the server three separate ways in the QSA block machinery. |
 | **Measurement instrumentation** | Per-graph, per-dispatch and per-phase timing, all off unless an environment variable is set. |
@@ -106,12 +107,12 @@ happily if the tree was edited by hand and re-recorded afterwards. The strong qu
 recipe still rebuilds the tree from nothing, and that has its own tool:
 
 ```bash
-python tools/replay_bootstrap.py          # clean upstream + patch set == the 52 files, byte for byte
+python tools/replay_bootstrap.py          # clean upstream + patch set == the 53 files, byte for byte
 ```
 
 It restores the 47 modified files to upstream from the clone's own git objects, addressed by the blob
 hashes in `bootstrap/UPSTREAM.json` — so clean upstream is reconstructed rather than trusted — then
-replays the snapshot and every script and compares. It reports **52 / 52**.
+replays the snapshot and every script and compares. It reports **53 / 53**.
 
 It was not always so. Five of the 24 were owned by no script at all - including the largest measured
 win in the project, which a clean rebuild would have silently dropped - and three scripts had drifted
